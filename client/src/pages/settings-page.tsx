@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, User, Key, Bell, Shield, Camera, X } from "lucide-react";
+import { Loader2, User, Key, Bell, Shield, Camera, X, Lock } from "lucide-react";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
@@ -26,12 +26,25 @@ const profileFormSchema = z.object({
 
 type ProfileFormValues = z.infer<typeof profileFormSchema>;
 
+// Password change form schema
+const passwordFormSchema = z.object({
+  currentPassword: z.string().min(1, { message: "Current password is required." }),
+  newPassword: z.string().min(8, { message: "Password must be at least 8 characters." }),
+  confirmPassword: z.string().min(8, { message: "Password must be at least 8 characters." }),
+}).refine((data) => data.newPassword === data.confirmPassword, {
+  message: "Passwords do not match",
+  path: ["confirmPassword"],
+});
+
+type PasswordFormValues = z.infer<typeof passwordFormSchema>;
+
 export default function SettingsPage() {
   const { user } = useAuth();
   const { toast } = useToast();
   const [apiKey, setApiKey] = useState<string | null>(null);
   const [isGeneratingKey, setIsGeneratingKey] = useState(false);
   const [isUploadingPicture, setIsUploadingPicture] = useState(false);
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Get user initials for avatar
@@ -127,14 +140,80 @@ export default function SettingsPage() {
     },
   });
 
+  // Initialize password change form
+  const passwordForm = useForm<PasswordFormValues>({
+    resolver: zodResolver(passwordFormSchema),
+    defaultValues: {
+      currentPassword: "",
+      newPassword: "",
+      confirmPassword: "",
+    },
+  });
+
+  // Handle password change form submission
+  const onPasswordSubmit = async (data: PasswordFormValues) => {
+    setIsChangingPassword(true);
+    try {
+      const response = await apiRequest("POST", "/api/user/change-password", {
+        currentPassword: data.currentPassword,
+        newPassword: data.newPassword,
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Failed to change password");
+      }
+      
+      toast({
+        title: "Password updated",
+        description: "Your password has been changed successfully.",
+      });
+      
+      // Reset the form
+      passwordForm.reset();
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Failed to change password",
+        description: error.message || "Please try again later.",
+      });
+    } finally {
+      setIsChangingPassword(false);
+    }
+  };
+
   // Handle profile form submission
   const onSubmit = async (data: ProfileFormValues) => {
-    // In a real app, this would update the user's profile
-    // For now, we'll just show a success toast
-    toast({
-      title: "Profile updated",
-      description: "Your profile has been updated successfully.",
-    });
+    try {
+      const response = await apiRequest("PATCH", "/api/user/profile", data);
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Failed to update profile");
+      }
+      
+      const updatedUser = await response.json();
+      
+      // Update the cached user data
+      queryClient.setQueryData(["/api/user"], (oldData: any) => {
+        if (!oldData) return oldData;
+        return {
+          ...oldData,
+          ...updatedUser
+        };
+      });
+      
+      toast({
+        title: "Profile updated",
+        description: "Your profile has been updated successfully.",
+      });
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Failed to update profile",
+        description: error.message || "Please try again later.",
+      });
+    }
   };
 
   // Generate API key for browser extension
@@ -180,6 +259,10 @@ export default function SettingsPage() {
               <TabsTrigger value="profile" className="flex items-center gap-2">
                 <User size={16} />
                 <span>Profile</span>
+              </TabsTrigger>
+              <TabsTrigger value="security" className="flex items-center gap-2">
+                <Lock size={16} />
+                <span>Security</span>
               </TabsTrigger>
               <TabsTrigger value="api" className="flex items-center gap-2">
                 <Key size={16} />
@@ -353,6 +436,87 @@ export default function SettingsPage() {
                   </CardContent>
                 </Card>
               </div>
+            </TabsContent>
+            
+            {/* Security Tab */}
+            <TabsContent value="security">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Security Settings</CardTitle>
+                  <CardDescription>Manage your password and account security</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="max-w-xl">
+                    <Form {...passwordForm}>
+                      <form onSubmit={passwordForm.handleSubmit(onPasswordSubmit)} className="space-y-6">
+                        <h3 className="text-lg font-semibold">Change Password</h3>
+                        <FormField
+                          control={passwordForm.control}
+                          name="currentPassword"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Current Password</FormLabel>
+                              <FormControl>
+                                <Input type="password" placeholder="••••••••" {...field} />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={passwordForm.control}
+                          name="newPassword"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>New Password</FormLabel>
+                              <FormControl>
+                                <Input type="password" placeholder="••••••••" {...field} />
+                              </FormControl>
+                              <FormDescription>
+                                Password must be at least 8 characters long.
+                              </FormDescription>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={passwordForm.control}
+                          name="confirmPassword"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Confirm New Password</FormLabel>
+                              <FormControl>
+                                <Input type="password" placeholder="••••••••" {...field} />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <Button type="submit" disabled={isChangingPassword}>
+                          {isChangingPassword ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Updating...
+                            </>
+                          ) : (
+                            "Change Password"
+                          )}
+                        </Button>
+                      </form>
+                    </Form>
+                    
+                    <div className="mt-12">
+                      <h3 className="text-lg font-semibold mb-4">Security Recommendations</h3>
+                      <ul className="space-y-3 list-disc list-inside text-sm text-gray-700">
+                        <li>Use a unique password you don't use on any other site</li>
+                        <li>Include a mix of uppercase letters, lowercase letters, numbers, and symbols</li>
+                        <li>Change your password regularly, at least every 90 days</li>
+                        <li>Never share your password with anyone, even colleagues</li>
+                      </ul>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
             </TabsContent>
             
             {/* API Access Tab */}
