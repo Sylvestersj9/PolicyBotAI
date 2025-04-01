@@ -3,7 +3,7 @@ import { useForm } from "react-hook-form";
 import { useAuth, registerFormSchema, RegisterData } from "@/hooks/use-auth";
 import { useLocation } from "wouter";
 import { Eye, EyeOff, FileText, Search } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Form,
@@ -24,12 +24,6 @@ export default function AuthPage() {
   const { loginMutation, registerMutation, user } = useAuth();
   const [_, navigate] = useLocation();
   
-  // Redirect if user is already logged in
-  if (user) {
-    navigate("/");
-    return null;
-  }
-
   // Login form setup
   const loginForm = useForm<{ username: string; password: string }>({
     defaultValues: {
@@ -51,6 +45,14 @@ export default function AuthPage() {
       role: "admin",
     },
   });
+  
+  // Redirect if user is already logged in
+  // Using useEffect to handle navigation after render
+  useEffect(() => {
+    if (user) {
+      navigate("/");
+    }
+  }, [user, navigate]);
 
   // Handle login form submission
   const onLoginSubmit = (data: { username: string; password: string }) => {
