@@ -45,8 +45,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const loginMutation = useMutation({
     mutationFn: async (credentials: LoginData) => {
-      const res = await apiRequest("POST", "/api/login", credentials);
-      return await res.json();
+      try {
+        const res = await fetch("/api/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(credentials),
+          credentials: "include",
+        });
+        
+        const data = await res.json();
+        
+        if (!res.ok) {
+          throw new Error(data.message || `Error ${res.status}: ${res.statusText}`);
+        }
+        
+        return data;
+      } catch (error: any) {
+        throw new Error(error.message || "Login failed. Please try again.");
+      }
     },
     onSuccess: (user) => {
       queryClient.setQueryData(["/api/user"], user);
@@ -66,10 +82,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const registerMutation = useMutation({
     mutationFn: async (userData: RegisterData) => {
-      // Remove confirmPassword before sending to API
-      const { confirmPassword, ...registrationData } = userData;
-      const res = await apiRequest("POST", "/api/register", registrationData);
-      return await res.json();
+      try {
+        // Remove confirmPassword before sending to API
+        const { confirmPassword, ...registrationData } = userData;
+        
+        const res = await fetch("/api/register", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(registrationData),
+          credentials: "include",
+        });
+        
+        const data = await res.json();
+        
+        if (!res.ok) {
+          throw new Error(data.message || `Error ${res.status}: ${res.statusText}`);
+        }
+        
+        return data;
+      } catch (error: any) {
+        throw new Error(error.message || "Registration failed. Please try again.");
+      }
     },
     onSuccess: (user) => {
       queryClient.setQueryData(["/api/user"], user);
@@ -89,7 +122,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logoutMutation = useMutation({
     mutationFn: async () => {
-      await apiRequest("POST", "/api/logout");
+      try {
+        const res = await fetch("/api/logout", {
+          method: "POST",
+          credentials: "include",
+        });
+        
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.message || `Error ${res.status}: ${res.statusText}`);
+        }
+        
+        return;
+      } catch (error: any) {
+        throw new Error(error.message || "Logout failed. Please try again.");
+      }
     },
     onSuccess: () => {
       queryClient.setQueryData(["/api/user"], null);
