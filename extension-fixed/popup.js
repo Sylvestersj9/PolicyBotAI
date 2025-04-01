@@ -564,7 +564,29 @@ document.addEventListener('DOMContentLoaded', function() {
   function displaySearchResults(result, query) {
     let html = '';
     
-    if (result.policyId) {
+    // Check for specific error types
+    if (result.error) {
+      let errorClass = 'error';
+      let errorMessage = '';
+      
+      if (result.error === 'rate_limit') {
+        errorClass = 'warning';
+        errorMessage = '<p class="error-hint">The API quota has been exceeded. Please contact your administrator to update the OpenAI subscription.</p>';
+      } else if (result.error === 'auth_error') {
+        errorClass = 'error';
+        errorMessage = '<p class="error-hint">The AI service is not properly configured. Please contact your administrator.</p>';
+      }
+      
+      html = `
+        <div class="result-item ${errorClass}">
+          <h4>Search Error</h4>
+          <p>${result.answer}</p>
+          ${errorMessage}
+        </div>
+      `;
+    }
+    // Show policy results
+    else if (result.policyId) {
       const confidencePercent = Math.round(result.confidence * 100);
       
       html = `
@@ -582,7 +604,9 @@ document.addEventListener('DOMContentLoaded', function() {
           </div>
         </div>
       `;
-    } else {
+    } 
+    // Show generic answer
+    else {
       html = `
         <div class="result-item">
           <p>${result.answer}</p>

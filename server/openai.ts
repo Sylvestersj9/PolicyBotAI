@@ -15,6 +15,7 @@ export async function searchPoliciesWithAI(query: string, policies: Policy[]): P
   policyId?: number;
   policyTitle?: string;
   confidence: number;
+  error?: string;
 }> {
   try {
     // Create a context of all policies for the AI to search through
@@ -95,11 +96,29 @@ ${policiesContext}`
   } catch (error) {
     console.error("OpenAI search error:", error);
     
-    // Return a graceful error response
-    return {
-      answer: "An error occurred while searching policies. Please try again later.",
-      confidence: 0
-    };
+    // Check for specific OpenAI error types
+    const err = error as any; // Type assertion for error handling
+    
+    if (err?.code === 'insufficient_quota' || err?.status === 429) {
+      return {
+        answer: "The AI service has reached its usage limit. Please contact your administrator to update the OpenAI API subscription.",
+        confidence: 0,
+        error: "rate_limit"
+      };
+    } else if (err?.code === 'invalid_api_key' || err?.status === 401) {
+      return {
+        answer: "The AI service is not properly configured. Please contact your administrator to verify the OpenAI API key.",
+        confidence: 0,
+        error: "auth_error"
+      };
+    } else {
+      // Generic error response
+      return {
+        answer: "An error occurred while searching policies. Please try again later.",
+        confidence: 0,
+        error: "general_error"
+      };
+    }
   }
 }
 
@@ -111,6 +130,7 @@ ${policiesContext}`
 export async function analyzePolicyContent(policyContent: string): Promise<{
   summary: string;
   keyPoints: string[];
+  error?: string;
 }> {
   try {
     const response = await openai.chat.completions.create({
@@ -154,10 +174,28 @@ Respond in JSON format with "summary" and "keyPoints" fields.`
   } catch (error) {
     console.error("OpenAI policy analysis error:", error);
     
-    // Return a graceful error response
-    return {
-      summary: "An error occurred while analyzing the policy.",
-      keyPoints: []
-    };
+    // Check for specific OpenAI error types
+    const err = error as any; // Type assertion for error handling
+    
+    if (err?.code === 'insufficient_quota' || err?.status === 429) {
+      return {
+        summary: "The AI service has reached its usage limit. Please contact your administrator to update the OpenAI API subscription.",
+        keyPoints: [],
+        error: "rate_limit"
+      };
+    } else if (err?.code === 'invalid_api_key' || err?.status === 401) {
+      return {
+        summary: "The AI service is not properly configured. Please contact your administrator to verify the OpenAI API key.",
+        keyPoints: [],
+        error: "auth_error"
+      };
+    } else {
+      // Generic error response
+      return {
+        summary: "An error occurred while analyzing the policy.",
+        keyPoints: [],
+        error: "general_error"
+      };
+    }
   }
 }

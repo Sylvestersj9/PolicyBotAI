@@ -165,6 +165,31 @@
       margin-bottom: 10px;
     }
     
+    /* Error states for result items */
+    .result-item.error {
+      border-color: #f44336;
+      background-color: #ffebee;
+    }
+    
+    .result-item.warning {
+      border-color: #ff9800;
+      background-color: #fff8e1;
+    }
+    
+    .error-hint {
+      font-size: 11px;
+      font-style: italic;
+      color: #d32f2f;
+      margin-top: 8px;
+      padding: 6px;
+      background-color: rgba(255, 255, 255, 0.7);
+      border-radius: 4px;
+    }
+    
+    .result-item.warning .error-hint {
+      color: #e65100;
+    }
+    
     .result-item h4 {
       margin: 0 0 5px 0;
       font-size: 13px;

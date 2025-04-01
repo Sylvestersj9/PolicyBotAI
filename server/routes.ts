@@ -279,7 +279,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Perform AI search
       const searchResult = await searchPoliciesWithAI(query, policies);
       
-      // Record the search query
+      // Special handling for OpenAI API errors - we still store them but log them differently
+      if (searchResult.error) {
+        console.log(`AI search returned error: ${searchResult.error}`);
+        
+        // Record the search query with the error result
+        const savedQuery = await storage.createSearchQuery({
+          query,
+          userId: req.user.id,
+          result: JSON.stringify(searchResult),
+        });
+        
+        // Log activity including the error
+        await storage.createActivity({
+          userId: req.user.id,
+          action: "search_error",
+          resourceType: "policy",
+          details: `Search for "${query}" failed with error: ${searchResult.error}`,
+        });
+        
+        // Return a 200 status with the error data that the client can properly display
+        return res.json({
+          id: savedQuery.id,
+          query: savedQuery.query,
+          result: searchResult,
+          timestamp: savedQuery.timestamp
+        });
+      }
+      
+      // Record the search query for successful search
       const savedQuery = await storage.createSearchQuery({
         query,
         userId: req.user.id,
@@ -302,7 +330,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     } catch (error) {
       console.error("Search error:", error);
-      res.status(500).json({ message: "Failed to perform search" });
+      // Return a more structured error response that matches our error format
+      res.status(500).json({ 
+        message: "Failed to perform search",
+        result: {
+          answer: "An unexpected error occurred while searching policies. Please try again later.",
+          confidence: 0,
+          error: "server_error"
+        }
+      });
     }
   });
 
@@ -476,6 +512,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const searchResult = await searchPoliciesWithAI(query, policies);
       console.log("AI search completed");
       
+      // Special handling for OpenAI API errors
+      if (searchResult.error) {
+        console.log(`AI search returned error: ${searchResult.error}`);
+        
+        // Record the search query with error result
+        await storage.createSearchQuery({
+          query,
+          userId: req.user.id,
+          result: JSON.stringify(searchResult),
+        });
+        
+        // Log activity with error
+        await storage.createActivity({
+          userId: req.user.id,
+          action: "extension_search_error",
+          resourceType: "policy",
+          details: `Extension search for "${query}" failed with error: ${searchResult.error}`,
+        });
+        
+        console.log("Sending error result to extension");
+        return res.json({
+          ...searchResult,
+          success: false,
+          errorType: searchResult.error
+        });
+      }
+      
       // Record the search query
       await storage.createSearchQuery({
         query,
@@ -500,7 +563,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error("Extension search error:", error);
       res.status(500).json({ 
         message: "Failed to perform search",
-        error: String(error)
+        answer: "An error occurred while searching policies. Please try again later.",
+        confidence: 0,
+        error: "server_error",
+        success: false
       });
     }
   });

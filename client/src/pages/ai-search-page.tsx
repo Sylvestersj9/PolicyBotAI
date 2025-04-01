@@ -49,8 +49,32 @@ export default function AISearchPage() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/searches"] });
       
-      // Only show success toast if we got a meaningful answer
-      if (data?.result?.answer && !data.result.answer.includes("Error parsing AI response")) {
+      // If there's an error in the result, show an appropriate toast message
+      if (data?.result?.error) {
+        const errorType = data.result.error;
+        
+        if (errorType === 'rate_limit') {
+          toast({
+            title: "OpenAI API Quota Exceeded",
+            description: "The AI service has reached its usage limit. Please contact your administrator.",
+            variant: "destructive",
+          });
+        } else if (errorType === 'auth_error') {
+          toast({
+            title: "OpenAI API Authentication Error",
+            description: "The AI service is not properly configured. Please contact your administrator.",
+            variant: "destructive",
+          });
+        } else {
+          toast({
+            title: "Search Error",
+            description: "An error occurred while searching policies. Please try again later.",
+            variant: "destructive",
+          });
+        }
+      } 
+      // Only show success toast if we got a meaningful answer with no errors
+      else if (data?.result?.answer && !data.result.answer.includes("Error parsing AI response")) {
         toast({
           title: "Search completed",
           description: "Found relevant information in your policies.",
