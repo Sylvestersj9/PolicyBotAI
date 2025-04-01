@@ -56,7 +56,8 @@ export interface IStorage {
   getAiTrainings(): Promise<AiTraining[]>;
   getAiTraining(id: number): Promise<AiTraining | undefined>;
   createAiTraining(training: InsertAiTraining): Promise<AiTraining>;
-  updateAiTrainingStatus(id: number, status: string, completedAt?: Date, metrics?: any, errorMessage?: string): Promise<AiTraining | undefined>;
+  updateAiTrainingStatus(id: number, status: string, completedAt?: Date, metrics?: any, errorMessage?: string, progress?: number): Promise<AiTraining | undefined>;
+  updateAiTrainingIsActive(id: number, isActive: boolean): Promise<AiTraining | undefined>;
   getLatestSuccessfulTraining(model: string): Promise<AiTraining | undefined>;
   
   // Session store
@@ -421,7 +422,10 @@ export class MemStorage implements IStorage {
       completedAt: null,
       metrics: null,
       errorMessage: null,
-      policies: insertTraining.policies || null
+      progress: 0,
+      isActive: false,
+      policies: insertTraining.policies || null,
+      documentTypes: insertTraining.documentTypes || null
     };
     
     this.aiTrainings.set(id, training);
@@ -433,7 +437,8 @@ export class MemStorage implements IStorage {
     status: string, 
     completedAt?: Date, 
     metrics?: any, 
-    errorMessage?: string
+    errorMessage?: string,
+    progress?: number
   ): Promise<AiTraining | undefined> {
     const training = this.aiTrainings.get(id);
     if (!training) return undefined;
@@ -444,7 +449,22 @@ export class MemStorage implements IStorage {
       status,
       completedAt: completedAt || (status === "completed" ? new Date() : training.completedAt),
       metrics: metrics || training.metrics,
-      errorMessage: errorMessage || training.errorMessage
+      errorMessage: errorMessage || training.errorMessage,
+      progress: progress !== undefined ? progress : training.progress
+    };
+    
+    this.aiTrainings.set(id, updatedTraining);
+    return updatedTraining;
+  }
+  
+  async updateAiTrainingIsActive(id: number, isActive: boolean): Promise<AiTraining | undefined> {
+    const training = this.aiTrainings.get(id);
+    if (!training) return undefined;
+    
+    // Update active status
+    const updatedTraining: AiTraining = {
+      ...training,
+      isActive
     };
     
     this.aiTrainings.set(id, updatedTraining);
@@ -775,7 +795,10 @@ export class DatabaseStorage implements IStorage {
       completedAt: null,
       metrics: null,
       errorMessage: null,
-      policies: insertTraining.policies || null
+      progress: 0,
+      isActive: false,
+      policies: insertTraining.policies || null,
+      documentTypes: insertTraining.documentTypes || null
     }).returning();
     
     return result[0];
@@ -786,7 +809,8 @@ export class DatabaseStorage implements IStorage {
     status: string, 
     completedAt?: Date, 
     metrics?: any, 
-    errorMessage?: string
+    errorMessage?: string,
+    progress?: number
   ): Promise<AiTraining | undefined> {
     const training = await this.getAiTraining(id);
     if (!training) return undefined;
@@ -796,8 +820,21 @@ export class DatabaseStorage implements IStorage {
         status,
         completedAt: completedAt || (status === "completed" ? new Date() : training.completedAt),
         metrics: metrics || training.metrics,
-        errorMessage: errorMessage || training.errorMessage
+        errorMessage: errorMessage || training.errorMessage,
+        progress: progress !== undefined ? progress : training.progress
       })
+      .where(eq(aiTraining.id, id))
+      .returning();
+      
+    return result[0];
+  }
+  
+  async updateAiTrainingIsActive(id: number, isActive: boolean): Promise<AiTraining | undefined> {
+    const training = await this.getAiTraining(id);
+    if (!training) return undefined;
+    
+    const result = await this.db.update(aiTraining)
+      .set({ isActive })
       .where(eq(aiTraining.id, id))
       .returning();
       

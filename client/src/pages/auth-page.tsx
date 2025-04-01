@@ -72,14 +72,14 @@ export default function AuthPage() {
       </div>
       
       {/* Left side - Form */}
-      <div className="relative z-10 flex flex-col justify-center items-center p-6 lg:p-8">
+      <div className="relative z-10 flex flex-col justify-center items-center p-4 sm:p-6 lg:p-8 min-h-[100vh] overflow-y-auto">
         <div className="w-full max-w-md">
-          <div className="mb-8 flex items-center justify-center lg:justify-start">
-            <div className="h-12 w-12 rounded-lg bg-gradient-to-r from-primary to-primary/80 flex items-center justify-center mr-3 shadow-md">
-              <FileText className="h-6 w-6 text-white" />
+          <div className="mb-6 sm:mb-8 flex items-center justify-center lg:justify-start">
+            <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-lg bg-gradient-to-r from-primary to-primary/80 flex items-center justify-center mr-3 shadow-md">
+              <FileText className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
             </div>
             <div>
-              <span className="font-bold text-3xl bg-gradient-to-r from-primary to-primary/80 text-transparent bg-clip-text">Pro Policy AI</span>
+              <span className="font-bold text-2xl sm:text-3xl bg-gradient-to-r from-primary to-primary/80 text-transparent bg-clip-text">Pro Policy AI</span>
               <div className="text-xs text-neutral-500">Intelligent Policy Management</div>
             </div>
           </div>
@@ -208,7 +208,7 @@ export default function AuthPage() {
                 <CardContent>
                   <Form {...registerForm}>
                     <form onSubmit={registerForm.handleSubmit(onRegisterSubmit)} className="space-y-4">
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <FormField
                           control={registerForm.control}
                           name="name"

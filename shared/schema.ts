@@ -5,22 +5,32 @@ import { z } from "zod";
 // AI Training model
 export const aiTraining = pgTable("ai_training", {
   id: serial("id").primaryKey(),
-  status: text("status").notNull().default("pending"), // pending, completed, failed
+  status: text("status").notNull().default("pending"), // pending, in_progress, completed, failed
   model: text("model").notNull(), // which model to train (e.g., "huggingface", "openai")
   version: text("version").notNull(), // version identifier for the training
+  name: text("name").notNull(), // Descriptive name for the training job
+  description: text("description"), // Optional description of what this training is for
+  trainingParams: jsonb("training_params"), // Training parameters (e.g., epochs, batch size)
   startedAt: timestamp("started_at").defaultNow(),
   completedAt: timestamp("completed_at"),
   metrics: jsonb("metrics"), // Training metrics (e.g., accuracy, loss)
   createdBy: integer("created_by").notNull(), // User who initiated the training
   policies: text("policies").array(), // Array of policy IDs used for training
+  documentTypes: text("document_types").array(), // Types of documents used for training
+  progress: integer("progress").default(0), // Progress percentage (0-100)
   errorMessage: text("error_message"), // Error message if training failed
+  isActive: boolean("is_active").default(false), // Is this the active model version
 });
 
 export const insertAiTrainingSchema = createInsertSchema(aiTraining).pick({
   model: true,
   version: true,
+  name: true,
+  description: true,
+  trainingParams: true,
   createdBy: true,
   policies: true,
+  documentTypes: true,
 });
 
 // User model
