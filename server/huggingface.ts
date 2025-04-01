@@ -5,10 +5,10 @@ import { Policy } from '@shared/schema';
 // Using API key allows access to more powerful models and higher rate limits
 const hf = new HfInference(process.env.HUGGINGFACE_API_KEY);
 
-// Using more widely accessible models that work well with the provided API key
-// Changed from Mistral to a more accessible model
-const DEFAULT_MODEL = 'google/flan-t5-xl';
-const FALLBACK_MODEL = 'gpt2';
+// Using even more widely accessible models that should work with free API keys
+// These models are more reliably accessible to free/public API keys
+const DEFAULT_MODEL = 'gpt2';
+const FALLBACK_MODELS = ['distilgpt2', 'distilbert-base-uncased', 'bert-base-uncased'];
 
 /**
  * Search through policies using Hugging Face's AI to find the most relevant information
@@ -86,7 +86,7 @@ Format your response as JSON:
 {"policyId": 2, "answer": "According to Policy #2, employees must report incidents within 24 hours", "confidence": 0.9}`;
 
     // Call the model with enhanced error handling and fallback
-    let response;
+    let response: any = null;
     try {
       console.log(`Attempting to call Hugging Face model: ${DEFAULT_MODEL}`);
       response = await hf.textGeneration({
@@ -102,28 +102,43 @@ Format your response as JSON:
     } catch (modelError) {
       console.error("Error with primary model:", modelError);
       
-      try {
-        console.log(`Attempting fallback model: ${FALLBACK_MODEL}`);
-        // Try with fallback model
-        response = await hf.textGeneration({
-          model: FALLBACK_MODEL,
-          inputs: prompt,
-          parameters: {
-            max_new_tokens: 500,
-            temperature: 0.3,
-            return_full_text: false,
-          }
-        });
-        console.log("Fallback model response received successfully");
-      } catch (fallbackError) {
-        console.error("Error with fallback model:", fallbackError);
-        console.log("All AI models failed, using keyword search results as fallback");
+      // Try each fallback model in sequence until one works
+      let fallbackSucceeded = false;
+      
+      for (const fallbackModel of FALLBACK_MODELS) {
+        if (fallbackSucceeded) break;
+        
+        try {
+          console.log(`Attempting fallback model: ${fallbackModel}`);
+          response = await hf.textGeneration({
+            model: fallbackModel,
+            inputs: prompt,
+            parameters: {
+              max_new_tokens: 500,
+              temperature: 0.3,
+              return_full_text: false,
+            }
+          });
+          console.log(`Fallback model ${fallbackModel} response received successfully`);
+          fallbackSucceeded = true;
+        } catch (fallbackError) {
+          console.error(`Error with fallback model ${fallbackModel}:`, fallbackError);
+        }
+      }
+      
+      if (!fallbackSucceeded) {
+        console.error("All AI models failed, using keyword search results as fallback");
         return keywordResult;
       }
     }
 
     let result;
     try {
+      // Make sure response exists and contains generated text before proceeding
+      if (!response || !response.generated_text) {
+        throw new Error("Invalid or empty response from AI model");
+      }
+      
       // Extract JSON from the response
       const jsonMatch = response.generated_text.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
@@ -132,7 +147,7 @@ Format your response as JSON:
         throw new Error("No JSON found in response");
       }
     } catch (error) {
-      console.error("Failed to parse JSON from AI response:", response.generated_text);
+      console.error("Failed to parse JSON from AI response:", response?.generated_text || "No response text");
       // Fallback to keyword search if we can't parse the AI response
       console.log("Failed to parse AI response, using keyword search results as fallback");
       return keywordResult;
@@ -344,7 +359,7 @@ ${policyContent}
 Format your response as JSON with fields "summary" and "keyPoints" (array of strings).`;
 
     // Call the model with enhanced error handling and fallback
-    let response;
+    let response: any = null;
     try {
       console.log(`Attempting to call Hugging Face model for analysis: ${DEFAULT_MODEL}`);
       response = await hf.textGeneration({
@@ -360,28 +375,43 @@ Format your response as JSON with fields "summary" and "keyPoints" (array of str
     } catch (modelError) {
       console.error("Error with primary model for analysis:", modelError);
       
-      try {
-        console.log(`Attempting fallback model for analysis: ${FALLBACK_MODEL}`);
-        // Try with fallback model
-        response = await hf.textGeneration({
-          model: FALLBACK_MODEL,
-          inputs: prompt,
-          parameters: {
-            max_new_tokens: 500,
-            temperature: 0.2,
-            return_full_text: false,
-          }
-        });
-        console.log("Fallback model analysis response received successfully");
-      } catch (fallbackError) {
-        console.error("Error with fallback model for analysis:", fallbackError);
-        console.log("All AI models failed, using algorithmic analysis as fallback");
+      // Try each fallback model in sequence until one works
+      let fallbackSucceeded = false;
+      
+      for (const fallbackModel of FALLBACK_MODELS) {
+        if (fallbackSucceeded) break;
+        
+        try {
+          console.log(`Attempting fallback model for analysis: ${fallbackModel}`);
+          response = await hf.textGeneration({
+            model: fallbackModel,
+            inputs: prompt,
+            parameters: {
+              max_new_tokens: 500,
+              temperature: 0.2,
+              return_full_text: false,
+            }
+          });
+          console.log(`Fallback model ${fallbackModel} analysis response received successfully`);
+          fallbackSucceeded = true;
+        } catch (fallbackError) {
+          console.error(`Error with fallback model ${fallbackModel} for analysis:`, fallbackError);
+        }
+      }
+      
+      if (!fallbackSucceeded) {
+        console.log("All AI models failed for analysis, using algorithmic analysis as fallback");
         return backupAnalysis;
       }
     }
 
     let result;
     try {
+      // Make sure response exists and contains generated text before proceeding
+      if (!response || !response.generated_text) {
+        throw new Error("Invalid or empty response from AI model");
+      }
+      
       // Extract JSON from the response
       const jsonMatch = response.generated_text.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
@@ -390,7 +420,7 @@ Format your response as JSON with fields "summary" and "keyPoints" (array of str
         throw new Error("No JSON found in response");
       }
     } catch (error) {
-      console.error("Failed to parse JSON from AI response:", response.generated_text);
+      console.error("Failed to parse JSON from AI response:", response?.generated_text || "No response text");
       // Fallback to algorithmic analysis
       console.log("Failed to parse AI response, using algorithmic analysis as fallback");
       return backupAnalysis;
