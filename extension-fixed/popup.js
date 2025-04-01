@@ -1,7 +1,7 @@
 // Configuration
-// Try to get the URL from storage, fall back to Replit URL if not found
+// Try to get the URL from storage, fall back to custom domain if not found
 // IMPORTANT: HTTPS is required for Chrome extensions due to security restrictions
-let API_BASE_URL = 'https://policybotai.replit.app';
+let API_BASE_URL = 'https://your-domain.com'; // Replace with your actual domain
 
 // Function to get stored API URL or use default
 function getApiBaseUrl() {
