@@ -1,0 +1,339 @@
+import type { Express } from "express";
+import { createServer, type Server } from "http";
+import { storage } from "./storage";
+import { setupAuth } from "./auth";
+import { searchPoliciesWithAI } from "./openai";
+import { 
+  insertPolicySchema, 
+  insertCategorySchema, 
+  insertSearchQuerySchema,
+  insertActivitySchema
+} from "@shared/schema";
+import { z } from "zod";
+
+// Auth middleware to check if the user is authenticated
+function requireAuth(req: any, res: any, next: any) {
+  if (req.isAuthenticated()) {
+    return next();
+  }
+  res.status(401).json({ message: "Unauthorized" });
+}
+
+export async function registerRoutes(app: Express): Promise<Server> {
+  // Setup authentication routes
+  setupAuth(app);
+
+  // Get all categories
+  app.get("/api/categories", requireAuth, async (req, res) => {
+    try {
+      const categories = await storage.getCategories();
+      res.json(categories);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get categories" });
+    }
+  });
+
+  // Create a new category
+  app.post("/api/categories", requireAuth, async (req, res) => {
+    try {
+      const validData = insertCategorySchema.parse(req.body);
+      const category = await storage.createCategory(validData);
+      
+      // Log activity
+      await storage.createActivity({
+        userId: req.user.id,
+        action: "created",
+        resourceType: "category",
+        resourceId: category.id,
+        details: `Created category "${category.name}"`,
+      });
+      
+      res.status(201).json(category);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ 
+          message: "Validation error", 
+          errors: error.errors 
+        });
+      }
+      res.status(500).json({ message: "Failed to create category" });
+    }
+  });
+
+  // Get all policies
+  app.get("/api/policies", requireAuth, async (req, res) => {
+    try {
+      const policies = await storage.getPolicies();
+      res.json(policies);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get policies" });
+    }
+  });
+
+  // Get a specific policy
+  app.get("/api/policies/:id", requireAuth, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid policy ID" });
+      }
+      
+      const policy = await storage.getPolicy(id);
+      if (!policy) {
+        return res.status(404).json({ message: "Policy not found" });
+      }
+      
+      // Log activity
+      await storage.createActivity({
+        userId: req.user.id,
+        action: "viewed",
+        resourceType: "policy",
+        resourceId: policy.id,
+        details: `Viewed policy "${policy.title}"`,
+      });
+      
+      res.json(policy);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get policy" });
+    }
+  });
+
+  // Create a new policy
+  app.post("/api/policies", requireAuth, async (req, res) => {
+    try {
+      const validData = insertPolicySchema.parse({
+        ...req.body,
+        createdBy: req.user.id,
+        policyRef: `POL-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
+      });
+      
+      const policy = await storage.createPolicy(validData);
+      
+      // Log activity
+      await storage.createActivity({
+        userId: req.user.id,
+        action: "created",
+        resourceType: "policy",
+        resourceId: policy.id,
+        details: `Created policy "${policy.title}"`,
+      });
+      
+      res.status(201).json(policy);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ 
+          message: "Validation error", 
+          errors: error.errors 
+        });
+      }
+      res.status(500).json({ message: "Failed to create policy" });
+    }
+  });
+
+  // Update a policy
+  app.put("/api/policies/:id", requireAuth, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid policy ID" });
+      }
+      
+      const policy = await storage.getPolicy(id);
+      if (!policy) {
+        return res.status(404).json({ message: "Policy not found" });
+      }
+      
+      // Validate the update data
+      const updatedData = insertPolicySchema.partial().parse(req.body);
+      
+      // Update the policy
+      const updatedPolicy = await storage.updatePolicy(id, updatedData);
+      
+      // Log activity
+      await storage.createActivity({
+        userId: req.user.id,
+        action: "updated",
+        resourceType: "policy",
+        resourceId: policy.id,
+        details: `Updated policy "${policy.title}"`,
+      });
+      
+      res.json(updatedPolicy);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ 
+          message: "Validation error", 
+          errors: error.errors 
+        });
+      }
+      res.status(500).json({ message: "Failed to update policy" });
+    }
+  });
+
+  // Delete a policy
+  app.delete("/api/policies/:id", requireAuth, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid policy ID" });
+      }
+      
+      const policy = await storage.getPolicy(id);
+      if (!policy) {
+        return res.status(404).json({ message: "Policy not found" });
+      }
+      
+      const success = await storage.deletePolicy(id);
+      
+      if (success) {
+        // Log activity
+        await storage.createActivity({
+          userId: req.user.id,
+          action: "deleted",
+          resourceType: "policy",
+          resourceId: id,
+          details: `Deleted policy "${policy.title}"`,
+        });
+        
+        res.json({ success: true });
+      } else {
+        res.status(500).json({ message: "Failed to delete policy" });
+      }
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete policy" });
+    }
+  });
+
+  // AI Search endpoint
+  app.post("/api/search", requireAuth, async (req, res) => {
+    try {
+      const { query } = req.body;
+      
+      if (!query || typeof query !== 'string' || query.trim() === '') {
+        return res.status(400).json({ message: "Query is required" });
+      }
+      
+      // Get all policies for searching
+      const policies = await storage.getPolicies();
+      
+      // Perform AI search
+      const searchResult = await searchPoliciesWithAI(query, policies);
+      
+      // Record the search query
+      const savedQuery = await storage.createSearchQuery({
+        query,
+        userId: req.user.id,
+        result: JSON.stringify(searchResult),
+      });
+      
+      // Log activity
+      await storage.createActivity({
+        userId: req.user.id,
+        action: "searched",
+        resourceType: "policy",
+        details: `Searched for "${query}"`,
+      });
+      
+      res.json({
+        id: savedQuery.id,
+        query: savedQuery.query,
+        result: searchResult,
+        timestamp: savedQuery.timestamp
+      });
+    } catch (error) {
+      console.error("Search error:", error);
+      res.status(500).json({ message: "Failed to perform search" });
+    }
+  });
+
+  // Get recent searches for current user
+  app.get("/api/searches", requireAuth, async (req, res) => {
+    try {
+      const searches = await storage.getSearchQueries(req.user.id);
+      
+      // Parse the stored JSON result for each search
+      const formattedSearches = searches.map(search => ({
+        id: search.id,
+        query: search.query,
+        result: JSON.parse(search.result),
+        timestamp: search.timestamp
+      }));
+      
+      res.json(formattedSearches);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get search history" });
+    }
+  });
+
+  // Get recent activities
+  app.get("/api/activities", requireAuth, async (req, res) => {
+    try {
+      const activities = await storage.getActivities();
+      
+      // Get all users to enrich the activity data
+      const userMap = new Map();
+      for (const activity of activities) {
+        if (!userMap.has(activity.userId)) {
+          const user = await storage.getUser(activity.userId);
+          if (user) {
+            userMap.set(activity.userId, {
+              id: user.id,
+              name: user.name,
+              username: user.username
+            });
+          }
+        }
+      }
+      
+      // Enrich activities with user information
+      const enrichedActivities = activities.map(activity => ({
+        ...activity,
+        user: userMap.get(activity.userId) || { id: activity.userId, name: "Unknown", username: "unknown" }
+      }));
+      
+      res.json(enrichedActivities);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get activities" });
+    }
+  });
+
+  // API endpoint for browser extension
+  app.post("/api/extension/search", requireAuth, async (req, res) => {
+    try {
+      const { query } = req.body;
+      
+      if (!query || typeof query !== 'string' || query.trim() === '') {
+        return res.status(400).json({ message: "Query is required" });
+      }
+      
+      // Get all policies for searching
+      const policies = await storage.getPolicies();
+      
+      // Perform AI search
+      const searchResult = await searchPoliciesWithAI(query, policies);
+      
+      // Record the search query
+      await storage.createSearchQuery({
+        query,
+        userId: req.user.id,
+        result: JSON.stringify(searchResult),
+      });
+      
+      // Log activity
+      await storage.createActivity({
+        userId: req.user.id,
+        action: "extension_search",
+        resourceType: "policy",
+        details: `Extension searched for "${query}"`,
+      });
+      
+      res.json(searchResult);
+    } catch (error) {
+      console.error("Extension search error:", error);
+      res.status(500).json({ message: "Failed to perform search" });
+    }
+  });
+
+  const httpServer = createServer(app);
+  return httpServer;
+}
