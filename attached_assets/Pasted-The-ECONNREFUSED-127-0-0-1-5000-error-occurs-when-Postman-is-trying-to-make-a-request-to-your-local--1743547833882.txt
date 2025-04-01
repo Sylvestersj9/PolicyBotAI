@@ -1,0 +1,110 @@
+The ECONNREFUSED 127.0.0.1:5000 error occurs when Postman is trying to make a request to your local server (on localhost:5000), but it is unable to connect. This typically means the server isn't running properly or there is an issue with the local network setup.
+
+Here are steps to troubleshoot and fix this:
+
+1. Verify Server is Running:
+Make sure your server is running. In your terminal (Replit or local machine), you should see something like this:
+
+arduino
+Copy
+Edit
+Server running on port 5000
+If you don't see this message, start the server:
+
+bash
+Copy
+Edit
+npm run dev
+or
+
+bash
+Copy
+Edit
+tsx server/index.ts
+2. Check for Errors in Terminal:
+Check the terminal where the server is running for any errors. If the server isn’t running, there may be errors preventing it from starting up.
+
+If there are any issues starting the server, they will be printed to the terminal. If this is the case, try to fix the issue before proceeding.
+
+3. Check the Server Logs:
+If the server is running, verify that it's correctly listening on port 5000. You should see this line in the terminal where the server is running:
+
+arduino
+Copy
+Edit
+Server running on port 5000
+If you don't see this message, ensure that your app.listen(5000) code is correct in your Express server file (server/index.ts or app.js).
+
+4. Test with curl:
+You can also test the connection using curl in the terminal to see if the server responds:
+
+bash
+Copy
+Edit
+curl -X POST http://localhost:5000/ask \
+-H "Content-Type: application/json" \
+-H "Authorization: Bearer ***REMOVED***" \
+-d '{"question": "What is the purpose of this document?", "documentText": "This policy document explains the guidelines for employee conduct."}'
+This will bypass Postman and directly test the server in your terminal. If curl can't connect either, then there’s likely an issue with your server.
+
+5. Check Firewall or Security Software:
+Sometimes, local security software or firewalls might block connections to localhost. Make sure there’s no firewall preventing connections on port 5000.
+
+6. Restart Server:
+If the server is running but you're still getting the ECONNREFUSED error, stop the server (press Ctrl + C in the terminal) and then restart it with:
+
+bash
+Copy
+Edit
+npm run dev
+or
+
+bash
+Copy
+Edit
+tsx server/index.ts
+7. Ensure Port 5000 is Available:
+Check if port 5000 is already being used by another process. You can do this with:
+
+For Linux/Mac:
+
+bash
+Copy
+Edit
+lsof -i :5000
+For Windows:
+
+bash
+Copy
+Edit
+netstat -ano | findstr :5000
+If another process is using the port, you can either stop that process or change the port in your server code (e.g., change 5000 to 3000).
+
+8. Update the URL in Postman:
+Ensure that the URL you are sending the request to in Postman is correct:
+
+http
+Copy
+Edit
+http://localhost:5000/ask
+9. Try Changing the Port:
+If port 5000 is still causing issues, you can change the port number in your Express app and then restart the server.
+
+Open your server file (e.g., server/index.ts) and change:
+
+javascript
+Copy
+Edit
+app.listen(5000, () => {
+  console.log('Server running on port 5000');
+});
+to another port, for example:
+
+javascript
+Copy
+Edit
+app.listen(3000, () => {
+  console.log('Server running on port 3000');
+});
+Restart the server and update the Postman request to use http://localhost:3000/ask.
+
