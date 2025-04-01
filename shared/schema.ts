@@ -1,6 +1,27 @@
-import { pgTable, text, serial, integer, timestamp, boolean, json } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, timestamp, boolean, json, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
+
+// AI Training model
+export const aiTraining = pgTable("ai_training", {
+  id: serial("id").primaryKey(),
+  status: text("status").notNull().default("pending"), // pending, completed, failed
+  model: text("model").notNull(), // which model to train (e.g., "huggingface", "openai")
+  version: text("version").notNull(), // version identifier for the training
+  startedAt: timestamp("started_at").defaultNow(),
+  completedAt: timestamp("completed_at"),
+  metrics: jsonb("metrics"), // Training metrics (e.g., accuracy, loss)
+  createdBy: integer("created_by").notNull(), // User who initiated the training
+  policies: text("policies").array(), // Array of policy IDs used for training
+  errorMessage: text("error_message"), // Error message if training failed
+});
+
+export const insertAiTrainingSchema = createInsertSchema(aiTraining).pick({
+  model: true,
+  version: true,
+  createdBy: true,
+  policies: true,
+});
 
 // User model
 export const users = pgTable("users", {
@@ -12,6 +33,7 @@ export const users = pgTable("users", {
   company: text("company").notNull(),
   role: text("role").notNull().default("admin"),
   apiKey: text("api_key"),
+  profilePicture: text("profile_picture"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -22,6 +44,7 @@ export const insertUserSchema = createInsertSchema(users).pick({
   email: true,
   company: true,
   role: true,
+  profilePicture: true,
 });
 
 // Category model
@@ -107,3 +130,6 @@ export type SearchQuery = typeof searchQueries.$inferSelect;
 
 export type InsertActivity = z.infer<typeof insertActivitySchema>;
 export type Activity = typeof activities.$inferSelect;
+
+export type InsertAiTraining = z.infer<typeof insertAiTrainingSchema>;
+export type AiTraining = typeof aiTraining.$inferSelect;

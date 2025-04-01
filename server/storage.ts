@@ -3,7 +3,8 @@ import {
   categories, type Category, type InsertCategory,
   policies, type Policy, type InsertPolicy,
   searchQueries, type SearchQuery, type InsertSearchQuery,
-  activities, type Activity, type InsertActivity
+  activities, type Activity, type InsertActivity,
+  aiTraining, type AiTraining, type InsertAiTraining
 } from "@shared/schema";
 import createMemoryStore from "memorystore";
 import session from "express-session";
@@ -24,6 +25,9 @@ export interface IStorage {
   getUserByApiKey(apiKey: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
   updateUserApiKey(userId: number, apiKey: string): Promise<User | undefined>;
+  updateUserProfile(userId: number, updates: Partial<Omit<InsertUser, 'password'>>): Promise<User | undefined>;
+  updateUserPassword(userId: number, newPassword: string): Promise<User | undefined>;
+  updateUserProfilePicture(userId: number, profilePicture: string): Promise<User | undefined>;
   
   // Category operations
   getCategories(): Promise<Category[]>;
@@ -48,6 +52,13 @@ export interface IStorage {
   getActivityByUser(userId: number): Promise<Activity[]>;
   createActivity(activity: InsertActivity): Promise<Activity>;
   
+  // AI Training operations
+  getAiTrainings(): Promise<AiTraining[]>;
+  getAiTraining(id: number): Promise<AiTraining | undefined>;
+  createAiTraining(training: InsertAiTraining): Promise<AiTraining>;
+  updateAiTrainingStatus(id: number, status: string, completedAt?: Date, metrics?: any, errorMessage?: string): Promise<AiTraining | undefined>;
+  getLatestSuccessfulTraining(model: string): Promise<AiTraining | undefined>;
+  
   // Session store
   sessionStore: any; // Using any as a workaround for SessionStore type issue
 }
@@ -59,12 +70,14 @@ export class MemStorage implements IStorage {
   private policies: Map<number, Policy>;
   private searchQueries: Map<number, SearchQuery>;
   private activities: Map<number, Activity>;
+  private aiTrainings: Map<number, AiTraining>;
   
   userCurrentId: number;
   categoryCurrentId: number;
   policyCurrentId: number;
   searchQueryCurrentId: number;
   activityCurrentId: number;
+  aiTrainingCurrentId: number;
   sessionStore: any; // Using any as a workaround for SessionStore type issue
 
   constructor() {
@@ -73,12 +86,14 @@ export class MemStorage implements IStorage {
     this.policies = new Map();
     this.searchQueries = new Map();
     this.activities = new Map();
+    this.aiTrainings = new Map();
     
     this.userCurrentId = 1;
     this.categoryCurrentId = 1;
     this.policyCurrentId = 1;
     this.searchQueryCurrentId = 1;
     this.activityCurrentId = 1;
+    this.aiTrainingCurrentId = 1;
     
     this.sessionStore = new MemoryStore({
       checkPeriod: 86400000, // 24 hours
@@ -182,7 +197,8 @@ export class MemStorage implements IStorage {
       id, 
       createdAt,
       apiKey: null, // Initialize with null API key
-      role // Ensure role is always defined
+      role, // Ensure role is always defined
+      profilePicture: insertUser.profilePicture || null // Initialize profile picture
     };
     this.users.set(id, user);
     return user;
@@ -195,6 +211,45 @@ export class MemStorage implements IStorage {
     const updatedUser: User = {
       ...user,
       apiKey
+    };
+    
+    this.users.set(userId, updatedUser);
+    return updatedUser;
+  }
+  
+  async updateUserProfile(userId: number, updates: Partial<Omit<InsertUser, 'password'>>): Promise<User | undefined> {
+    const user = this.users.get(userId);
+    if (!user) return undefined;
+    
+    const updatedUser: User = {
+      ...user,
+      ...updates
+    };
+    
+    this.users.set(userId, updatedUser);
+    return updatedUser;
+  }
+  
+  async updateUserPassword(userId: number, newPassword: string): Promise<User | undefined> {
+    const user = this.users.get(userId);
+    if (!user) return undefined;
+    
+    const updatedUser: User = {
+      ...user,
+      password: newPassword
+    };
+    
+    this.users.set(userId, updatedUser);
+    return updatedUser;
+  }
+  
+  async updateUserProfilePicture(userId: number, profilePicture: string): Promise<User | undefined> {
+    const user = this.users.get(userId);
+    if (!user) return undefined;
+    
+    const updatedUser: User = {
+      ...user,
+      profilePicture
     };
     
     this.users.set(userId, updatedUser);
@@ -337,6 +392,78 @@ export class MemStorage implements IStorage {
     this.activities.set(id, activity);
     return activity;
   }
+  
+  // AI Training operations
+  async getAiTrainings(): Promise<AiTraining[]> {
+    return Array.from(this.aiTrainings.values())
+      .sort((a, b) => {
+        // Handle potential null timestamps
+        const aTime = a.startedAt?.getTime() ?? 0;
+        const bTime = b.startedAt?.getTime() ?? 0;
+        return bTime - aTime; // Most recent first
+      });
+  }
+  
+  async getAiTraining(id: number): Promise<AiTraining | undefined> {
+    return this.aiTrainings.get(id);
+  }
+  
+  async createAiTraining(insertTraining: InsertAiTraining): Promise<AiTraining> {
+    const id = this.aiTrainingCurrentId++;
+    const startedAt = new Date();
+    
+    // Create AiTraining record with proper policies array handling
+    const training: AiTraining = {
+      ...insertTraining,
+      id,
+      status: "pending",
+      startedAt,
+      completedAt: null,
+      metrics: null,
+      errorMessage: null,
+      policies: insertTraining.policies || null
+    };
+    
+    this.aiTrainings.set(id, training);
+    return training;
+  }
+  
+  async updateAiTrainingStatus(
+    id: number, 
+    status: string, 
+    completedAt?: Date, 
+    metrics?: any, 
+    errorMessage?: string
+  ): Promise<AiTraining | undefined> {
+    const training = this.aiTrainings.get(id);
+    if (!training) return undefined;
+    
+    // Update with the new status information
+    const updatedTraining: AiTraining = {
+      ...training,
+      status,
+      completedAt: completedAt || (status === "completed" ? new Date() : training.completedAt),
+      metrics: metrics || training.metrics,
+      errorMessage: errorMessage || training.errorMessage
+    };
+    
+    this.aiTrainings.set(id, updatedTraining);
+    return updatedTraining;
+  }
+  
+  async getLatestSuccessfulTraining(model: string): Promise<AiTraining | undefined> {
+    // Filter for completed trainings of the specified model and sort by date
+    const completedTrainings = Array.from(this.aiTrainings.values())
+      .filter(t => t.status === "completed" && t.model === model)
+      .sort((a, b) => {
+        const aTime = a.completedAt?.getTime() ?? 0;
+        const bTime = b.completedAt?.getTime() ?? 0;
+        return bTime - aTime; // Most recent first
+      });
+    
+    // Return the most recent one
+    return completedTrainings.length > 0 ? completedTrainings[0] : undefined;
+  }
 }
 
 // PostgreSQL storage implementation
@@ -463,7 +590,8 @@ export class DatabaseStorage implements IStorage {
   async createUser(insertUser: InsertUser): Promise<User> {
     const result = await this.db.insert(users).values({
       ...insertUser,
-      apiKey: null
+      apiKey: null,
+      profilePicture: insertUser.profilePicture || null
     }).returning();
     
     return result[0];
@@ -472,6 +600,33 @@ export class DatabaseStorage implements IStorage {
   async updateUserApiKey(userId: number, apiKey: string): Promise<User | undefined> {
     const result = await this.db.update(users)
       .set({ apiKey })
+      .where(eq(users.id, userId))
+      .returning();
+      
+    return result[0];
+  }
+  
+  async updateUserProfile(userId: number, updates: Partial<Omit<InsertUser, 'password'>>): Promise<User | undefined> {
+    const result = await this.db.update(users)
+      .set(updates)
+      .where(eq(users.id, userId))
+      .returning();
+      
+    return result[0];
+  }
+  
+  async updateUserPassword(userId: number, newPassword: string): Promise<User | undefined> {
+    const result = await this.db.update(users)
+      .set({ password: newPassword })
+      .where(eq(users.id, userId))
+      .returning();
+      
+    return result[0];
+  }
+  
+  async updateUserProfilePicture(userId: number, profilePicture: string): Promise<User | undefined> {
+    const result = await this.db.update(users)
+      .set({ profilePicture })
       .where(eq(users.id, userId))
       .returning();
       
@@ -597,6 +752,66 @@ export class DatabaseStorage implements IStorage {
       details: insertActivity.details ?? null,
       resourceId: insertActivity.resourceId ?? null,
     }).returning();
+    
+    return result[0];
+  }
+  
+  // AI Training operations
+  async getAiTrainings(): Promise<AiTraining[]> {
+    return await this.db.select().from(aiTraining)
+      .orderBy(desc(aiTraining.startedAt));
+  }
+  
+  async getAiTraining(id: number): Promise<AiTraining | undefined> {
+    const result = await this.db.select().from(aiTraining).where(eq(aiTraining.id, id));
+    return result[0];
+  }
+  
+  async createAiTraining(insertTraining: InsertAiTraining): Promise<AiTraining> {
+    const result = await this.db.insert(aiTraining).values({
+      ...insertTraining,
+      status: "pending",
+      startedAt: new Date(),
+      completedAt: null,
+      metrics: null,
+      errorMessage: null,
+      policies: insertTraining.policies || null
+    }).returning();
+    
+    return result[0];
+  }
+  
+  async updateAiTrainingStatus(
+    id: number, 
+    status: string, 
+    completedAt?: Date, 
+    metrics?: any, 
+    errorMessage?: string
+  ): Promise<AiTraining | undefined> {
+    const training = await this.getAiTraining(id);
+    if (!training) return undefined;
+    
+    const result = await this.db.update(aiTraining)
+      .set({
+        status,
+        completedAt: completedAt || (status === "completed" ? new Date() : training.completedAt),
+        metrics: metrics || training.metrics,
+        errorMessage: errorMessage || training.errorMessage
+      })
+      .where(eq(aiTraining.id, id))
+      .returning();
+      
+    return result[0];
+  }
+  
+  async getLatestSuccessfulTraining(model: string): Promise<AiTraining | undefined> {
+    const result = await this.db.select().from(aiTraining)
+      .where(and(
+        eq(aiTraining.status, "completed"),
+        eq(aiTraining.model, model)
+      ))
+      .orderBy(desc(aiTraining.completedAt))
+      .limit(1);
     
     return result[0];
   }

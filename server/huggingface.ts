@@ -31,31 +31,54 @@ export async function searchPoliciesWithAI(query: string, policies: Policy[]): P
       };
     }
 
-    // Create a context from all policies
-    const context = policies.map(p => 
-      `POLICY #${p.id} - ${p.title}:\n${p.content}\n\n`
-    ).join('');
+    // Check if we have any non-empty policy content
+    const validPolicies = policies.filter(p => p.content && p.content.trim() !== '');
+    
+    if (validPolicies.length === 0) {
+      return {
+        answer: "No policy content found in the system. Please add some policies with content first.",
+        confidence: 1.0
+      };
+    }
+    
+    // Create a more structured context from all policies, limiting to manageable chunks
+    // and ensuring content is properly formatted
+    const context = validPolicies.map(p => {
+      // Format the content to ensure it's clean UTF-8 text
+      let cleanContent = p.content || '';
+      
+      // Basic sanitization and formatting
+      cleanContent = cleanContent.trim()
+        .replace(/\u0000/g, '') // Remove null bytes
+        .replace(/\s+/g, ' ') // Normalize whitespace
+        .substring(0, 1500); // Limit length to avoid token issues
+      
+      return `POLICY #${p.id} - ${p.title}:\n${cleanContent}\n\n`;
+    }).join('');
 
-    // Format the prompt for instruction-tuned models
-    const prompt = `<s>[INST] I need to answer a question about company policies.
+    // Format the prompt for instruction-tuned models with improved instructions
+    const prompt = `<s>[INST] You are an advanced policy search system that helps users find information in company policies.
 
-Context information from policies:
+Context information from company policies (read this carefully):
 ${context}
 
 User question: ${query}
 
 Instructions:
-1. Find the most relevant policy for the question.
-2. If there's a relevant policy, provide the policy ID and a helpful answer based on that policy.
-3. If no policy is relevant, say so without making up information.
-4. Provide a confidence score between 0 and 1 indicating how confident you are in the answer.
-5. Format your response as JSON with these fields: 
-   - policyId (number or null)
-   - answer (string)
-   - confidence (number between 0 and 1)
+1. Carefully analyze the policies to find the most relevant information for the question.
+2. Use EXACT information from the policies - do not make up or invent policy details.
+3. If there's a relevant policy, provide the policy ID and a direct answer quoting from that policy.
+4. If multiple policies are relevant, use the one with the most specific information.
+5. If no policy contains relevant information, clearly state that no relevant policy was found.
+6. Provide a confidence score between 0 and 1 indicating how confident you are in your answer.
+
+Format your response as JSON with these fields:
+- policyId (number or null if no relevant policy)
+- answer (string containing your response with relevant quotes from the policy)
+- confidence (number between 0 and 1)
 
 Example response format:
-{"policyId": 2, "answer": "According to our policy...", "confidence": 0.85}
+{"policyId": 2, "answer": "According to Policy #2, 'Employees must report all incidents within 24 hours.' This directly addresses your question about incident reporting timeframes.", "confidence": 0.92}
 [/INST]</s>`;
 
     // Call the model with error handling and fallback

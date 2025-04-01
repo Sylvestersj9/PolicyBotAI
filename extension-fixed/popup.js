@@ -41,6 +41,7 @@ function saveApiBaseUrl(url) {
   }
   
   console.log("Saving normalized API URL:", url);
+  // Save to local storage
   chrome.storage.local.set({ apiBaseUrl: url });
   
   // Also update the background script

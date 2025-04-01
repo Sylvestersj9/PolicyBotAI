@@ -8,7 +8,9 @@ import {
   insertPolicySchema, 
   insertCategorySchema, 
   insertSearchQuerySchema,
-  insertActivitySchema
+  insertActivitySchema,
+  insertAiTrainingSchema,
+  insertUserSchema
 } from "@shared/schema";
 import { z } from "zod";
 import { uploadSingleFile, processUploadedFile } from "./upload";
@@ -18,11 +20,10 @@ import path from "path";
 // Extend Express.Request interface to include the user and file properties
 declare global {
   namespace Express {
+    interface User extends Omit<import('@shared/schema').User, 'password'> {}
+    
     interface Request {
-      user?: {
-        id: number;
-        [key: string]: any;
-      };
+      user?: User;
     }
   }
 }
@@ -85,13 +86,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const category = await storage.createCategory(validData);
       
       // Log activity
-      await storage.createActivity({
-        userId: req.user.id,
-        action: "created",
-        resourceType: "category",
-        resourceId: category.id,
-        details: `Created category "${category.name}"`,
-      });
+      if (req.user) {
+        await storage.createActivity({
+          userId: req.user.id,
+          action: "created",
+          resourceType: "category",
+          resourceId: category.id,
+          details: `Created category "${category.name}"`,
+        });
+      }
       
       res.status(201).json(category);
     } catch (error) {
@@ -650,6 +653,329 @@ export async function registerRoutes(app: Express): Promise<Server> {
         error: "server_error",
         success: false
       });
+    }
+  });
+
+  // User Profile Management Endpoints
+
+  // Get current user profile
+  app.get("/api/user/profile", requireAuth, async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      // Return user data without the password
+      const { password, ...userData } = req.user;
+      res.json(userData);
+    } catch (error) {
+      console.error("Error fetching user profile:", error);
+      res.status(500).json({ message: "Failed to fetch user profile" });
+    }
+  });
+
+  // Update user profile information
+  app.patch("/api/user/profile", requireAuth, async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      // Validate update data (excluding password which has its own endpoint)
+      const updateSchema = insertUserSchema
+        .omit({ password: true })
+        .partial();
+
+      const updateData = updateSchema.parse(req.body);
+      
+      // Update user profile
+      const updatedUser = await storage.updateUserProfile(req.user.id, updateData);
+      
+      if (!updatedUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      // Log activity
+      await storage.createActivity({
+        userId: req.user.id,
+        action: "updated",
+        resourceType: "user",
+        resourceId: req.user.id,
+        details: "Updated profile information"
+      });
+      
+      // Return user data without the password
+      const { password, ...userData } = updatedUser;
+      res.json(userData);
+    } catch (error) {
+      console.error("Error updating user profile:", error);
+      
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ 
+          message: "Validation error", 
+          errors: error.errors 
+        });
+      }
+      
+      res.status(500).json({ message: "Failed to update user profile" });
+    }
+  });
+  
+  // Change user password
+  app.post("/api/user/change-password", requireAuth, async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      const { currentPassword, newPassword } = req.body;
+      
+      if (!currentPassword || !newPassword) {
+        return res.status(400).json({ message: "Current password and new password are required" });
+      }
+      
+      // Get the user with password
+      const user = await storage.getUser(req.user.id);
+      
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      // Import the password comparison function from auth.ts
+      const { comparePasswords, hashPassword } = await import("./auth");
+      
+      // Verify the current password
+      const isValid = await comparePasswords(currentPassword, user.password);
+      
+      if (!isValid) {
+        return res.status(400).json({ message: "Current password is incorrect" });
+      }
+      
+      // Hash the new password
+      const hashedPassword = await hashPassword(newPassword);
+      
+      // Update the password
+      await storage.updateUserPassword(req.user.id, hashedPassword);
+      
+      // Log activity
+      await storage.createActivity({
+        userId: req.user.id,
+        action: "updated",
+        resourceType: "user",
+        resourceId: req.user.id,
+        details: "Changed account password"
+      });
+      
+      res.json({ message: "Password changed successfully" });
+    } catch (error) {
+      console.error("Error changing password:", error);
+      res.status(500).json({ message: "Failed to change password" });
+    }
+  });
+  
+  // Upload profile picture
+  app.post("/api/user/profile-picture", requireAuth, uploadSingleFile('profilePicture'), async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      if (!req.file) {
+        return res.status(400).json({ message: "No file uploaded" });
+      }
+      
+      // Get the file path
+      const filePath = req.file.path;
+      
+      // Normalize path for database storage
+      const normalizedPath = filePath.replace(/^.*[\\\/]uploads[\\\/]/, '/uploads/');
+      
+      // Update the user's profile picture
+      const updatedUser = await storage.updateUserProfilePicture(req.user.id, normalizedPath);
+      
+      if (!updatedUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      // Log activity
+      await storage.createActivity({
+        userId: req.user.id,
+        action: "updated",
+        resourceType: "user",
+        resourceId: req.user.id,
+        details: "Updated profile picture"
+      });
+      
+      // Return the updated profile picture path
+      res.json({ 
+        message: "Profile picture updated successfully",
+        profilePicture: updatedUser.profilePicture 
+      });
+    } catch (error) {
+      console.error("Error uploading profile picture:", error);
+      res.status(500).json({ message: "Failed to upload profile picture" });
+    }
+  });
+
+  // AI Training endpoints
+  
+  // Get all AI trainings
+  app.get("/api/ai-trainings", requireAuth, async (req, res) => {
+    try {
+      const trainings = await storage.getAiTrainings();
+      res.json(trainings);
+    } catch (error) {
+      console.error("Error fetching AI trainings:", error);
+      res.status(500).json({ message: "Failed to fetch AI trainings" });
+    }
+  });
+  
+  // Get a specific AI training
+  app.get("/api/ai-trainings/:id", requireAuth, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid training ID" });
+      }
+      
+      const training = await storage.getAiTraining(id);
+      if (!training) {
+        return res.status(404).json({ message: "Training not found" });
+      }
+      
+      res.json(training);
+    } catch (error) {
+      console.error("Error fetching AI training:", error);
+      res.status(500).json({ message: "Failed to fetch AI training" });
+    }
+  });
+  
+  // Create a new AI training
+  app.post("/api/ai-trainings", requireAuth, async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      // Validate request body
+      const trainingData = insertAiTrainingSchema.parse(req.body);
+      
+      // Create training record
+      const newTraining = await storage.createAiTraining({
+        ...trainingData,
+        createdBy: req.user.id
+      });
+      
+      // Record activity
+      await storage.createActivity({
+        userId: req.user.id,
+        action: "create",
+        resourceType: "ai_training",
+        resourceId: newTraining.id,
+        details: `Initiated AI training for model: ${newTraining.model}`
+      });
+      
+      // Here you would typically start a background process to perform the actual training
+      // For demonstration, we'll update the status directly after a short timeout
+      setTimeout(async () => {
+        try {
+          // In a real application, this would be a complex AI training process
+          // For demonstration, we'll just update the status to completed with mock metrics
+          await storage.updateAiTrainingStatus(
+            newTraining.id, 
+            "completed", 
+            new Date(), 
+            { accuracy: 0.95, loss: 0.05 }
+          );
+          
+          console.log(`Training ${newTraining.id} completed successfully`);
+        } catch (err) {
+          console.error(`Error completing training ${newTraining.id}:`, err);
+          await storage.updateAiTrainingStatus(
+            newTraining.id,
+            "failed",
+            new Date(),
+            null,
+            err instanceof Error ? err.message : String(err)
+          );
+        }
+      }, 5000); // 5 second delay for demonstration
+      
+      res.status(201).json(newTraining);
+    } catch (error) {
+      console.error("Error creating AI training:", error);
+      
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid training data", details: error.errors });
+      }
+      
+      res.status(500).json({ message: "Failed to create AI training" });
+    }
+  });
+  
+  // Update AI training status
+  app.patch("/api/ai-trainings/:id/status", requireAuth, async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid training ID" });
+      }
+      
+      const { status, completedAt, metrics, errorMessage } = req.body;
+      if (!status || !["pending", "completed", "failed"].includes(status)) {
+        return res.status(400).json({ message: "Invalid status" });
+      }
+      
+      const training = await storage.getAiTraining(id);
+      if (!training) {
+        return res.status(404).json({ message: "Training not found" });
+      }
+      
+      const updatedTraining = await storage.updateAiTrainingStatus(
+        id,
+        status,
+        completedAt ? new Date(completedAt) : undefined,
+        metrics,
+        errorMessage
+      );
+      
+      // Record activity
+      await storage.createActivity({
+        userId: req.user.id,
+        action: "update",
+        resourceType: "ai_training",
+        resourceId: id,
+        details: `Updated AI training status to: ${status}`
+      });
+      
+      res.json(updatedTraining);
+    } catch (error) {
+      console.error("Error updating AI training status:", error);
+      res.status(500).json({ message: "Failed to update AI training status" });
+    }
+  });
+  
+  // Get latest successful training for a model
+  app.get("/api/ai-trainings/model/:model/latest", requireAuth, async (req, res) => {
+    try {
+      const { model } = req.params;
+      if (!model) {
+        return res.status(400).json({ message: "Model name is required" });
+      }
+      
+      const training = await storage.getLatestSuccessfulTraining(model);
+      if (!training) {
+        return res.status(404).json({ message: "No successful training found for this model" });
+      }
+      
+      res.json(training);
+    } catch (error) {
+      console.error("Error fetching latest AI training:", error);
+      res.status(500).json({ message: "Failed to fetch latest AI training" });
     }
   });
 

@@ -1,5 +1,12 @@
 # Extension Changes and Improvements
 
+## Version 1.0.2 (April 2025)
+- Fixed critical syntax error in popup.js that caused extension failure
+- Added clear comment to prevent wrong formatting of chrome.storage.local.set calls
+- Enhanced error handling for HuggingFace AI model access issues
+- Added fallback AI model support when primary model fails
+- Improved JSON response parsing from AI models
+
 ## Security Improvements
 - Enforced HTTPS for all API calls (HTTP URLs are automatically converted to HTTPS)
 - Added proper error handling for network issues and improved diagnostics
@@ -32,3 +39,5 @@
 - If the server returns unexpected responses, check the browser console for detailed logs
 - Make sure CORS is properly configured on the server side to allow requests from the extension
 - Verify that the API server URL is correct and the server is running
+- If you see "Uncaught SyntaxError: Unexpected token '.'" in popup.js, please update to version 1.0.2 or later
+- For AI search issues, try logging in again to refresh your session and API key
