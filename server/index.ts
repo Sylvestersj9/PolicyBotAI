@@ -1,6 +1,7 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
+import cors from 'cors';
 
 // Debug request sizes
 function logRequestSize(req: Request, res: Response, next: NextFunction) {
@@ -17,6 +18,14 @@ function logRequestSize(req: Request, res: Response, next: NextFunction) {
 }
 
 const app = express();
+
+// Configure CORS for cross-origin requests from Chrome extension
+app.use(cors({
+  origin: true, // Allow all origins
+  credentials: true, // Allow cookies to be sent with requests
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'X-API-Key']
+}));
 
 // Add request logging middleware
 app.use(logRequestSize);
