@@ -2,11 +2,38 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 
+// Debug request sizes
+function logRequestSize(req: Request, res: Response, next: NextFunction) {
+  const contentLength = req.headers['content-length'] ? 
+    parseInt(req.headers['content-length']) : 0;
+  
+  const contentType = req.headers['content-type'] || 'unknown';
+  
+  if (contentLength > 1000000) { // Log if over ~1MB
+    console.log(`LARGE REQUEST: ${req.method} ${req.path} - Size: ${(contentLength/1024/1024).toFixed(2)}MB, Type: ${contentType}`);
+  }
+  
+  next();
+}
+
 const app = express();
-// Increase JSON payload size limit to 50MB
-app.use(express.json({ limit: '50mb' }));
-// Increase URL-encoded payload size limit to 50MB
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+// Add request logging middleware
+app.use(logRequestSize);
+
+// Configure express to handle large payloads (100MB limit)
+app.use(express.json({ 
+  limit: '100mb',
+  verify: (req, res, buf, encoding) => {
+    console.log(`JSON body size: ${buf.length} bytes`);
+  }
+}));
+
+app.use(express.urlencoded({ 
+  extended: true, 
+  limit: '100mb',
+  parameterLimit: 50000
+}));
 
 app.use((req, res, next) => {
   const start = Date.now();

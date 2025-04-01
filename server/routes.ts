@@ -1,4 +1,4 @@
-import type { Express, Request, Response, NextFunction } from "express";
+import express, { type Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupAuth } from "./auth";
@@ -10,7 +10,7 @@ import {
   insertActivitySchema
 } from "@shared/schema";
 import { z } from "zod";
-import multer from "multer";
+import { uploadSingleFile, processUploadedFile } from "./upload";
 import path from "path";
 
 // Extend Express.Request interface to include the user and file properties
@@ -25,13 +25,7 @@ declare global {
   }
 }
 
-// Configure multer for file uploads
-const upload = multer({
-  limits: {
-    fileSize: 50 * 1024 * 1024, // 50MB limit
-  },
-  storage: multer.memoryStorage()
-});
+// We're now using our dedicated upload module instead of configuring multer here
 
 // Auth middleware to check if the user is authenticated
 function requireAuth(req: Request, res: Response, next: NextFunction) {
@@ -44,6 +38,9 @@ function requireAuth(req: Request, res: Response, next: NextFunction) {
 export async function registerRoutes(app: Express): Promise<Server> {
   // Setup authentication routes
   setupAuth(app);
+  
+  // Serve files from the uploads directory
+  app.use("/uploads", requireAuth, express.static(path.join(process.cwd(), "uploads")));
 
   // Get all categories
   app.get("/api/categories", requireAuth, async (req, res) => {
@@ -120,38 +117,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Handle file upload for policies
-  app.post("/api/upload-policy-file", requireAuth, upload.single('file'), async (req, res) => {
+  // Handle file upload for policies using our dedicated middleware
+  app.post("/api/upload-policy-file", requireAuth, uploadSingleFile('file'), async (req, res) => {
     try {
-      if (!req.file) {
+      // The uploadSingleFile middleware has already saved the file to disk
+      // and validated its size. Now we need to extract the content.
+      const filePath = req.file?.path;
+      
+      if (!filePath) {
         return res.status(400).json({ message: "No file uploaded" });
       }
       
-      // Convert file buffer to string
-      let content = "";
-      
-      try {
-        // Try to extract text directly
-        content = req.file.buffer.toString('utf-8');
-      } catch (error) {
-        // If conversion fails, return base64 for client-side handling
-        content = `File upload: ${req.file.originalname} (${req.file.size} bytes)`;
-        return res.status(200).json({ 
-          fileName: req.file.originalname,
-          fileSize: req.file.size,
-          content: content
-        });
-      }
-      
-      // Return the content
-      res.status(200).json({ 
-        fileName: req.file.originalname,
-        fileSize: req.file.size,
-        content: content
-      });
+      // Process the uploaded file
+      return processUploadedFile(req, res);
     } catch (error) {
       console.error("File upload error:", error);
       res.status(500).json({ message: "Failed to process uploaded file" });
+    }
+  });
+  
+  // Alternative upload endpoint with disk storage for larger files
+  app.post("/api/upload-file-disk", requireAuth, uploadSingleFile('file'), (req, res) => {
+    try {
+      processUploadedFile(req, res);
+    } catch (error) {
+      console.error("File upload error:", error);
+      res.status(500).json({ 
+        message: "Failed to process uploaded file",
+        error: error.message
+      });
     }
   });
 

@@ -87,12 +87,12 @@ export default function PolicyForm({
     const file = e.target.files?.[0];
     if (!file) return;
     
-    // Check file size (max 30MB)
-    const maxSize = 30 * 1024 * 1024; // 30MB in bytes
+    // Check file size (max 50MB)
+    const maxSize = 50 * 1024 * 1024; // 50MB in bytes
     if (file.size > maxSize) {
       toast({
         title: "File too large",
-        description: `Maximum file size is 30MB. Please upload a smaller file or extract the content manually.`,
+        description: `Maximum file size is 50MB. Please upload a smaller file or extract the content manually.`,
         variant: "destructive"
       });
       return;
@@ -106,28 +106,43 @@ export default function PolicyForm({
       const formData = new FormData();
       formData.append('file', file);
       
-      // Upload file using the dedicated endpoint
-      const response = await fetch('/api/upload-policy-file', {
+      // Try using our alternative disk storage endpoint for better handling of large files
+      const response = await fetch('/api/upload-file-disk', {
         method: 'POST',
         body: formData,
         credentials: 'include', // Important for auth cookies
       });
       
       if (!response.ok) {
+        // If the request failed, get detailed error info
+        const errorText = await response.text();
+        console.error("Upload failed with status:", response.status, errorText);
         throw new Error(`Upload failed: ${response.status} ${response.statusText}`);
       }
       
       const result = await response.json();
       
       // Set the file name
-      setUploadedFileName(result.fileName);
+      setUploadedFileName(result.originalname || result.filename);
       
-      // Set the content in the form
-      form.setValue('content', result.content);
+      // Read the file content
+      const contentResponse = await fetch(`/uploads/${result.filename}`, {
+        method: 'GET',
+        credentials: 'include',
+      });
+      
+      if (contentResponse.ok) {
+        const fileContent = await contentResponse.text();
+        // Set the content in the form
+        form.setValue('content', fileContent);
+      } else {
+        // If we can't get the content, just use the filename as a reference
+        form.setValue('content', `File: ${result.originalname} (${Math.round(result.size / 1024)} KB)`);
+      }
       
       toast({
         title: "File uploaded successfully",
-        description: `${result.fileName} (${(result.fileSize / 1024).toFixed(2)} KB) has been processed.`,
+        description: `${result.originalname || result.filename} (${(result.size / 1024).toFixed(2)} KB) has been processed.`,
       });
     } catch (error) {
       console.error("File upload error:", error);
