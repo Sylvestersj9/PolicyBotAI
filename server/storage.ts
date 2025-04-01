@@ -7,7 +7,12 @@ import {
 } from "@shared/schema";
 import createMemoryStore from "memorystore";
 import session from "express-session";
+import connectPg from "connect-pg-simple";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { eq, and, desc, sql } from "drizzle-orm";
+import pg from "pg";
 
+const PostgresSessionStore = connectPg(session);
 const MemoryStore = createMemoryStore(session);
 
 // Define the storage interface
@@ -334,4 +339,240 @@ export class MemStorage implements IStorage {
   }
 }
 
-export const storage = new MemStorage();
+// PostgreSQL storage implementation
+export class DatabaseStorage implements IStorage {
+  private db: ReturnType<typeof drizzle>;
+  private pool: pg.Pool;
+  sessionStore: any;
+
+  constructor() {
+    this.pool = new pg.Pool({
+      connectionString: process.env.DATABASE_URL,
+      max: 10,
+    });
+    
+    this.db = drizzle(this.pool);
+    
+    this.sessionStore = new PostgresSessionStore({
+      pool: this.pool,
+      createTableIfMissing: true
+    });
+    
+    // Initialize default data
+    this.setupDefaultData();
+  }
+
+  private async setupDefaultData() {
+    try {
+      // Check if we need to create default categories
+      const existingCategories = await this.getCategories();
+      if (existingCategories.length === 0) {
+        console.log("Creating default categories...");
+        await this.initializeDefaultCategories();
+      }
+      
+      // Create default admin user if needed
+      const adminUser = await this.getUserByUsername("admin");
+      if (!adminUser) {
+        console.log("Creating default admin user...");
+        await this.createDefaultTestUser();
+      }
+    } catch (error) {
+      console.error("Error setting up default data:", error);
+    }
+  }
+  
+  private async createDefaultTestUser() {
+    try {
+      // We'll create a regular user through the normal registration API
+      const testUser1: InsertUser = {
+        username: "admin",
+        // This is the plain password - we'll register through the API to handle hashing
+        password: "password123", 
+        name: "Admin User",
+        email: "admin@example.com",
+        company: "Test Company",
+        role: "admin"
+      };
+      
+      // Check if user doesn't already exist
+      const existingUser = await this.getUserByUsername(testUser1.username);
+      if (!existingUser) {
+        // Import the hashPassword function from auth.ts
+        // In a normal production environment, we'd use the auth service directly
+        // but for this prototype with in-memory DB, we'll handle it here
+        const { scrypt, randomBytes } = await import('crypto');
+        const { promisify } = await import('util');
+        const scryptAsync = promisify(scrypt);
+        
+        // Hash the password using the same algorithm from auth.ts
+        const salt = randomBytes(16).toString("hex");
+        const buf = (await scryptAsync(testUser1.password, salt, 64)) as Buffer;
+        const hashedPassword = `${buf.toString("hex")}.${salt}`;
+        
+        // Create user with hashed password
+        const actualUser: InsertUser = {
+          ...testUser1,
+          password: hashedPassword
+        };
+        
+        await this.createUser(actualUser);
+        console.log('Created default test user: admin/password123');
+      }
+    } catch (error) {
+      console.error("Error creating default test user:", error);
+    }
+  }
+
+  private async initializeDefaultCategories() {
+    const defaultCategories = [
+      { name: "Emergency", color: "#EF4444" },
+      { name: "Safeguarding", color: "#F59E0B" },
+      { name: "Compliance", color: "#3B82F6" },
+      { name: "HR", color: "#10B981" },
+      { name: "General", color: "#6B7280" }
+    ];
+    
+    for (const category of defaultCategories) {
+      await this.createCategory(category);
+    }
+  }
+
+  // User operations
+  async getUser(id: number): Promise<User | undefined> {
+    const result = await this.db.select().from(users).where(eq(users.id, id));
+    return result[0];
+  }
+
+  async getUserByUsername(username: string): Promise<User | undefined> {
+    const result = await this.db.select().from(users).where(eq(users.username, username));
+    return result[0];
+  }
+  
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    const result = await this.db.select().from(users).where(eq(users.email, email));
+    return result[0];
+  }
+
+  async getUserByApiKey(apiKey: string): Promise<User | undefined> {
+    if (!apiKey) return undefined;
+    const result = await this.db.select().from(users).where(eq(users.apiKey, apiKey));
+    return result[0];
+  }
+
+  async createUser(insertUser: InsertUser): Promise<User> {
+    const result = await this.db.insert(users).values({
+      ...insertUser,
+      apiKey: null
+    }).returning();
+    
+    return result[0];
+  }
+  
+  async updateUserApiKey(userId: number, apiKey: string): Promise<User | undefined> {
+    const result = await this.db.update(users)
+      .set({ apiKey })
+      .where(eq(users.id, userId))
+      .returning();
+      
+    return result[0];
+  }
+
+  // Category operations
+  async getCategories(): Promise<Category[]> {
+    return await this.db.select().from(categories);
+  }
+  
+  async getCategory(id: number): Promise<Category | undefined> {
+    const result = await this.db.select().from(categories).where(eq(categories.id, id));
+    return result[0];
+  }
+  
+  async getCategoryByName(name: string): Promise<Category | undefined> {
+    const result = await this.db.select().from(categories)
+      .where(sql`LOWER(${categories.name}) = LOWER(${name})`);
+    return result[0];
+  }
+  
+  async createCategory(insertCategory: InsertCategory): Promise<Category> {
+    const result = await this.db.insert(categories).values(insertCategory).returning();
+    return result[0];
+  }
+
+  // Policy operations
+  async getPolicies(): Promise<Policy[]> {
+    return await this.db.select().from(policies);
+  }
+  
+  async getPoliciesByCategory(categoryId: number): Promise<Policy[]> {
+    return await this.db.select().from(policies).where(eq(policies.categoryId, categoryId));
+  }
+  
+  async getPolicy(id: number): Promise<Policy | undefined> {
+    const result = await this.db.select().from(policies).where(eq(policies.id, id));
+    return result[0];
+  }
+  
+  async createPolicy(insertPolicy: InsertPolicy): Promise<Policy> {
+    const result = await this.db.insert(policies).values({
+      ...insertPolicy,
+      description: insertPolicy.description ?? null,
+    }).returning();
+    
+    return result[0];
+  }
+  
+  async updatePolicy(id: number, updates: Partial<InsertPolicy>): Promise<Policy | undefined> {
+    const result = await this.db.update(policies)
+      .set({
+        ...updates,
+        updatedAt: new Date()
+      })
+      .where(eq(policies.id, id))
+      .returning();
+      
+    return result[0];
+  }
+  
+  async deletePolicy(id: number): Promise<boolean> {
+    const result = await this.db.delete(policies).where(eq(policies.id, id)).returning();
+    return result.length > 0;
+  }
+
+  // Search operations
+  async getSearchQueries(userId: number): Promise<SearchQuery[]> {
+    return await this.db.select().from(searchQueries)
+      .where(eq(searchQueries.userId, userId))
+      .orderBy(desc(searchQueries.timestamp));
+  }
+  
+  async createSearchQuery(insertQuery: InsertSearchQuery): Promise<SearchQuery> {
+    const result = await this.db.insert(searchQueries).values(insertQuery).returning();
+    return result[0];
+  }
+
+  // Activity operations
+  async getActivities(): Promise<Activity[]> {
+    return await this.db.select().from(activities)
+      .orderBy(desc(activities.timestamp));
+  }
+  
+  async getActivityByUser(userId: number): Promise<Activity[]> {
+    return await this.db.select().from(activities)
+      .where(eq(activities.userId, userId))
+      .orderBy(desc(activities.timestamp));
+  }
+  
+  async createActivity(insertActivity: InsertActivity): Promise<Activity> {
+    const result = await this.db.insert(activities).values({
+      ...insertActivity,
+      details: insertActivity.details ?? null,
+      resourceId: insertActivity.resourceId ?? null,
+    }).returning();
+    
+    return result[0];
+  }
+}
+
+// Switch from MemStorage to DatabaseStorage
+export const storage = new DatabaseStorage();
