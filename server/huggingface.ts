@@ -5,10 +5,11 @@ import { Policy } from '@shared/schema';
 // Using API key allows access to more powerful models and higher rate limits
 const hf = new HfInference(process.env.HUGGINGFACE_API_KEY);
 
-// Fallback to a text-generation model if Meta-Llama-3 is not available
+// Fallback to a text-generation model if primary model is not available
 // or if there are authentication issues
-const DEFAULT_MODEL = 'meta-llama/Meta-Llama-3-8B-Instruct';
-const FALLBACK_MODEL = 'mistralai/Mistral-7B-Instruct-v0.2';
+// Using a publicly available model that doesn't require special permissions
+const DEFAULT_MODEL = 'mistralai/Mistral-7B-Instruct-v0.2';
+const FALLBACK_MODEL = 'google/flan-t5-xl';
 
 /**
  * Search through policies using Hugging Face's AI to find the most relevant information
@@ -81,9 +82,10 @@ Example response format:
 {"policyId": 2, "answer": "According to Policy #2, 'Employees must report all incidents within 24 hours.' This directly addresses your question about incident reporting timeframes.", "confidence": 0.92}
 [/INST]</s>`;
 
-    // Call the model with error handling and fallback
+    // Call the model with enhanced error handling and fallback
     let response;
     try {
+      console.log(`Attempting to call Hugging Face model: ${DEFAULT_MODEL}`);
       response = await hf.textGeneration({
         model: DEFAULT_MODEL,
         inputs: prompt,
@@ -93,18 +95,27 @@ Example response format:
           return_full_text: false,
         }
       });
+      console.log("Primary model response received successfully");
     } catch (modelError) {
-      console.error("Error with primary model, trying fallback:", modelError);
-      // Try with fallback model
-      response = await hf.textGeneration({
-        model: FALLBACK_MODEL,
-        inputs: prompt,
-        parameters: {
-          max_new_tokens: 500,
-          temperature: 0.3,
-          return_full_text: false,
-        }
-      });
+      console.error("Error with primary model:", modelError);
+      
+      try {
+        console.log(`Attempting fallback model: ${FALLBACK_MODEL}`);
+        // Try with fallback model
+        response = await hf.textGeneration({
+          model: FALLBACK_MODEL,
+          inputs: prompt,
+          parameters: {
+            max_new_tokens: 500,
+            temperature: 0.3,
+            return_full_text: false,
+          }
+        });
+        console.log("Fallback model response received successfully");
+      } catch (fallbackError) {
+        console.error("Error with fallback model:", fallbackError);
+        throw new Error(`Both primary and fallback models failed. Primary error: ${modelError}. Fallback error: ${fallbackError}`);
+      }
     }
 
     let result;
@@ -190,9 +201,10 @@ Policy document:
 ${policyContent}
 [/INST]</s>`;
 
-    // Call the model with error handling and fallback
+    // Call the model with enhanced error handling and fallback
     let response;
     try {
+      console.log(`Attempting to call Hugging Face model for analysis: ${DEFAULT_MODEL}`);
       response = await hf.textGeneration({
         model: DEFAULT_MODEL,
         inputs: prompt,
@@ -202,18 +214,27 @@ ${policyContent}
           return_full_text: false,
         }
       });
+      console.log("Primary model analysis response received successfully");
     } catch (modelError) {
-      console.error("Error with primary model for analysis, trying fallback:", modelError);
-      // Try with fallback model
-      response = await hf.textGeneration({
-        model: FALLBACK_MODEL,
-        inputs: prompt,
-        parameters: {
-          max_new_tokens: 500,
-          temperature: 0.2,
-          return_full_text: false,
-        }
-      });
+      console.error("Error with primary model for analysis:", modelError);
+      
+      try {
+        console.log(`Attempting fallback model for analysis: ${FALLBACK_MODEL}`);
+        // Try with fallback model
+        response = await hf.textGeneration({
+          model: FALLBACK_MODEL,
+          inputs: prompt,
+          parameters: {
+            max_new_tokens: 500,
+            temperature: 0.2,
+            return_full_text: false,
+          }
+        });
+        console.log("Fallback model analysis response received successfully");
+      } catch (fallbackError) {
+        console.error("Error with fallback model for analysis:", fallbackError);
+        throw new Error(`Both primary and fallback models failed for analysis. Primary error: ${modelError}. Fallback error: ${fallbackError}`);
+      }
     }
 
     let result;
