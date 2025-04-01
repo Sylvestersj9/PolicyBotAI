@@ -8,6 +8,7 @@ import Sidebar from "@/components/ui/sidebar";
 import Header from "@/components/ui/header";
 import PolicyTable from "@/components/policy/policy-table";
 import PolicyForm from "@/components/policy/policy-form";
+import PolicyViewer from "@/components/policy/policy-viewer";
 import { 
   Dialog, 
   DialogContent, 
@@ -287,48 +288,15 @@ export default function PoliciesPage() {
         mode={selectedPolicy ? "edit" : "create"}
       />
       
-      {/* View Policy Modal */}
+      {/* View Policy Modal - Enhanced Document Viewer */}
       <Dialog open={isViewPolicyOpen} onOpenChange={setIsViewPolicyOpen}>
-        <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>{selectedPolicy?.title}</DialogTitle>
-            {selectedPolicy && (
-              <div className="flex items-center mt-1">
-                <span 
-                  className="px-2 py-1 text-xs rounded-full"
-                  style={{ 
-                    backgroundColor: `${getCategoryColor(selectedPolicy.categoryId)}20`,
-                    color: getCategoryColor(selectedPolicy.categoryId)
-                  }}
-                >
-                  {categories.find(c => c.id === selectedPolicy.categoryId)?.name || 'Unknown Category'}
-                </span>
-                <span className="text-xs text-neutral-500 ml-4">
-                  ID: {selectedPolicy.policyRef}
-                </span>
-              </div>
-            )}
-          </DialogHeader>
-          
-          {selectedPolicy?.description && (
-            <div className="mb-4">
-              <h4 className="text-sm font-medium mb-1">Description</h4>
-              <p className="text-sm text-neutral-600">{selectedPolicy.description}</p>
-            </div>
+        <DialogContent className="sm:max-w-[900px] max-h-[90vh] overflow-y-auto p-6">
+          {selectedPolicy && (
+            <PolicyViewer 
+              policy={selectedPolicy} 
+              onBack={() => setIsViewPolicyOpen(false)} 
+            />
           )}
-          
-          <div>
-            <h4 className="text-sm font-medium mb-1">Content</h4>
-            <div className="border rounded-md p-4 bg-neutral-50 text-sm whitespace-pre-wrap">
-              {selectedPolicy?.content}
-            </div>
-          </div>
-          
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button type="button">Close</Button>
-            </DialogClose>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

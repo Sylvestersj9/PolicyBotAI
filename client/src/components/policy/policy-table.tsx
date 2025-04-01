@@ -66,7 +66,9 @@ export default function PolicyTable({
   // Sort policies
   const sortedPolicies = [...filteredPolicies].sort((a, b) => {
     if (sortBy === "recent") {
-      return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+      const dateA = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+      const dateB = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+      return dateB - dateA;
     } else if (sortBy === "alphabetical") {
       return a.title.localeCompare(b.title);
     }
@@ -192,7 +194,9 @@ export default function PolicyTable({
                       )}
                     </TableCell>
                     <TableCell className="px-6 py-4 whitespace-nowrap text-sm text-neutral-500">
-                      {format(new Date(policy.updatedAt), 'MMM dd, yyyy')}
+                      {policy.updatedAt 
+                        ? format(typeof policy.updatedAt === 'string' ? new Date(policy.updatedAt) : policy.updatedAt, 'MMM dd, yyyy')
+                        : 'N/A'}
                     </TableCell>
                     <TableCell className="px-6 py-4 whitespace-nowrap text-right text-sm">
                       <div className="flex justify-end space-x-2">

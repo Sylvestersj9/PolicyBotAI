@@ -2,6 +2,42 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Print styles for policy documents */
+@media print {
+  body {
+    background: white;
+    padding: 0;
+    margin: 0;
+  }
+  
+  /* Hide navigation and UI elements when printing */
+  nav, header, footer, .sidebar, .tabs, 
+  button:not(.print-button), input, select, textarea {
+    display: none !important;
+  }
+  
+  /* Full width for the print view */
+  .policy-document {
+    width: 100%;
+    padding: 1cm;
+    margin: 0;
+    box-shadow: none !important;
+    border: none !important;
+  }
+  
+  /* Typography improvements for print */
+  .policy-content {
+    font-size: 12pt;
+    line-height: 1.5;
+  }
+  
+  /* Ensure all content is visible */
+  html, body, #root, main, .container {
+    height: auto !important;
+    overflow: visible !important;
+  }
+}
+
 @layer base {
   * {
     @apply border-border;
