@@ -106,7 +106,7 @@ export default function PolicyTable({
         <Button 
           variant="default" 
           size="sm"
-          className="text-primary hover:text-primary-dark border border-primary rounded font-medium flex items-center"
+          className="text-white hover:text-white border border-primary rounded font-medium flex items-center"
           onClick={onAddNew}
         >
           <Plus className="h-4 w-4 mr-1" /> New Policy

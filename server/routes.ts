@@ -360,10 +360,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Generate API key for extension
   app.post("/api/extension/generate-key", requireAuth, async (req, res) => {
     try {
+      console.log("Extension API key generation request received");
+      
       // Ensure user is authenticated
       if (!req.user) {
+        console.log("No user found in request - authentication failed");
         return res.status(401).json({ message: "Unauthorized" });
       }
+      
+      console.log(`Generating API key for user: ${req.user.id} (${req.user.username})`);
       
       // Generate a random API key
       const apiKey = Array(30)
@@ -386,13 +391,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
           details: "Generated API key for browser extension",
         });
         
-        res.json({ apiKey });
+        console.log(`API key generated successfully for user: ${req.user.id}`);
+        res.json({ apiKey, success: true });
       } else {
+        console.log(`User not found with ID: ${req.user.id}`);
         res.status(404).json({ message: "User not found" });
       }
     } catch (error) {
       console.error("API key generation error:", error);
-      res.status(500).json({ message: "Failed to generate API key" });
+      res.status(500).json({ message: "Failed to generate API key", error: String(error) });
     }
   });
   
@@ -424,12 +431,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // API endpoint for browser extension
   app.post("/api/extension/search", validateApiKey, async (req, res) => {
     try {
+      console.log("Extension search request received");
+      
       // Ensure user is authenticated via API key validation
       if (!req.user) {
+        console.log("No user found in request - API key validation failed");
         return res.status(401).json({ message: "Unauthorized" });
       }
       
+      console.log(`Processing search from user: ${req.user.id} (${req.user.username})`);
+      
       const { query } = req.body;
+      console.log(`Search query: "${query}"`);
       
       if (!query || typeof query !== 'string' || query.trim() === '') {
         return res.status(400).json({ message: "Query is required" });
@@ -437,9 +450,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Get all policies for searching
       const policies = await storage.getPolicies();
+      console.log(`Found ${policies.length} policies to search through`);
       
       // Perform AI search
+      console.log("Performing AI search...");
       const searchResult = await searchPoliciesWithAI(query, policies);
+      console.log("AI search completed");
       
       // Record the search query
       await storage.createSearchQuery({
@@ -456,10 +472,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         details: `Extension searched for "${query}"`,
       });
       
-      res.json(searchResult);
+      console.log("Sending search result to extension");
+      res.json({
+        ...searchResult,
+        success: true
+      });
     } catch (error) {
       console.error("Extension search error:", error);
-      res.status(500).json({ message: "Failed to perform search" });
+      res.status(500).json({ 
+        message: "Failed to perform search",
+        error: String(error)
+      });
     }
   });
 

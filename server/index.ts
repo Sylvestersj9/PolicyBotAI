@@ -23,9 +23,22 @@ const app = express();
 app.use(cors({
   origin: true, // Allow all origins
   credentials: true, // Allow cookies to be sent with requests
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'X-API-Key']
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Accept', 'X-API-Key', 'Authorization', 'Origin', 'X-Requested-With', 'Access-Control-Allow-Origin', 'Access-Control-Allow-Credentials'],
+  exposedHeaders: ['Set-Cookie', 'Date', 'ETag'],
+  maxAge: 3600 // Cache preflight request for 1 hour
 }));
+
+// Additional CORS headers for extension requests
+app.use((req, res, next) => {
+  // For extension endpoints, be extra permissive
+  if (req.path.includes('/api/extension/')) {
+    console.log(`CORS for extension endpoint: ${req.path}`);
+    res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+    res.header('Access-Control-Allow-Credentials', 'true');
+  }
+  next();
+});
 
 // Add request logging middleware
 app.use(logRequestSize);

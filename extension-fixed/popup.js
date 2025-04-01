@@ -190,16 +190,37 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         
         console.log(`Sending login request to: ${loginUrl}/api/login`);
+        console.log(`Request payload: ${JSON.stringify({ username, password })}`);
         
-        response = await fetch(`${loginUrl}/api/login`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json'
-          },
-          credentials: 'include', // Include cookies
-          body: JSON.stringify({ username, password })
-        });
+        // Add more detailed debugging information
+        const requestStartTime = new Date().getTime();
+        
+        try {
+          response = await Promise.race([
+            fetch(`${loginUrl}/api/login`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+              },
+              credentials: 'include', // Include cookies
+              mode: 'cors', // Explicitly request CORS mode
+              cache: 'no-cache', // Don't cache this request
+              redirect: 'follow', // Follow any redirects
+              body: JSON.stringify({ username, password })
+            }),
+            // Add a timeout to better diagnose network issues
+            new Promise((_, reject) => 
+              setTimeout(() => reject(new Error('Request timed out after 15 seconds')), 15000)
+            )
+          ]);
+          
+          const requestEndTime = new Date().getTime();
+          console.log(`Request completed in ${requestEndTime - requestStartTime}ms`);
+        } catch (innerError) {
+          console.error("Inner fetch error details:", innerError);
+          throw innerError; // Re-throw to be caught by the outer catch
+        }
       } catch (fetchError) {
         console.error("Fetch error during login:", fetchError);
         throw new Error(`Network error: ${fetchError.message}. Make sure you're using HTTPS in the API URL and the server is running.`);
@@ -236,12 +257,31 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Try to parse it as JSON
         try {
+          // Check if the response text is empty
+          if (!responseText || responseText.trim() === '') {
+            console.error("Response was empty");
+            throw new Error('Empty response from server');
+          }
+          
+          // Try to parse JSON
           userData = JSON.parse(responseText);
           console.log("Login successful, user data:", userData);
+          
+          // Verify we got a valid user object
+          if (!userData || !userData.id || !userData.username) {
+            console.error("Invalid user data object:", userData);
+            throw new Error('Server returned incomplete user data');
+          }
         } catch (jsonError) {
           console.error("Error parsing JSON:", jsonError);
           console.error("Response was not valid JSON:", responseText);
-          throw new Error('Invalid response format from server. Response was: ' + responseText.substring(0, 100));
+          
+          // Add comprehensive diagnostics
+          console.log("Response length:", responseText ? responseText.length : 0);
+          console.log("Response first 100 chars:", responseText ? responseText.substring(0, 100) : 'empty');
+          console.log("Response content type:", response.headers.get('content-type'));
+          
+          throw new Error(`Invalid response format from server. Check the console for details. Response preview: ${responseText ? responseText.substring(0, 30) : 'empty'}`);
         }
       } catch (e) {
         console.error("Error handling response:", e);
@@ -255,14 +295,33 @@ document.addEventListener('DOMContentLoaded', function() {
       console.log(`Attempting to get API key from: ${keyUrl}/api/extension/generate-key`);
       let keyResponse;
       try {
-        keyResponse = await fetch(`${keyUrl}/api/extension/generate-key`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json'
-          },
-          credentials: 'include' // Include cookies for session authentication
-        });
+        const apiKeyRequestStartTime = new Date().getTime();
+        
+        try {
+          keyResponse = await Promise.race([
+            fetch(`${keyUrl}/api/extension/generate-key`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+              },
+              credentials: 'include', // Include cookies for session authentication
+              mode: 'cors', // Explicitly request CORS mode
+              cache: 'no-cache', // Don't cache this request
+              redirect: 'follow' // Follow any redirects
+            }),
+            // Add a timeout to better diagnose network issues
+            new Promise((_, reject) => 
+              setTimeout(() => reject(new Error('API key request timed out after 15 seconds')), 15000)
+            )
+          ]);
+          
+          const apiKeyRequestEndTime = new Date().getTime();
+          console.log(`API key request completed in ${apiKeyRequestEndTime - apiKeyRequestStartTime}ms`);
+        } catch (innerError) {
+          console.error("Inner fetch error details during API key request:", innerError);
+          throw innerError; // Re-throw to be caught by the outer catch
+        }
       } catch (fetchError) {
         console.error("Fetch error during API key generation:", fetchError);
         throw new Error(`Network error during API key generation: ${fetchError.message}. Make sure you're using HTTPS.`);
@@ -389,15 +448,36 @@ document.addEventListener('DOMContentLoaded', function() {
       
       let response;
       try {
-        response = await fetch(`${searchUrl}/api/extension/search`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-            'X-API-Key': apiKey
-          },
-          body: JSON.stringify({ query })
-        });
+        console.log(`Sending search request with API key: ${apiKey ? 'present (hidden)' : 'missing'}`);
+        const searchRequestStartTime = new Date().getTime();
+        
+        try {
+          response = await Promise.race([
+            fetch(`${searchUrl}/api/extension/search`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'X-API-Key': apiKey
+              },
+              mode: 'cors', // Explicitly request CORS mode
+              cache: 'no-cache', // Don't cache this request
+              redirect: 'follow', // Follow any redirects
+              body: JSON.stringify({ query })
+            }),
+            // Add a timeout to better diagnose network issues
+            new Promise((_, reject) => 
+              setTimeout(() => reject(new Error('Search request timed out after 15 seconds')), 15000)
+            )
+          ]);
+          
+          const searchRequestEndTime = new Date().getTime();
+          console.log(`Search request completed in ${searchRequestEndTime - searchRequestStartTime}ms`);
+        } catch (innerError) {
+          console.error("Inner fetch error details during search:", innerError);
+          throw innerError; // Re-throw to be caught by the outer catch
+        }
+        
         console.log("Search response status:", response.status);
       } catch (fetchError) {
         console.error("Fetch error during search:", fetchError);
