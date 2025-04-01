@@ -5,10 +5,18 @@ import { Policy } from '@shared/schema';
 // Using API key allows access to more powerful models and higher rate limits
 const hf = new HfInference(process.env.HUGGINGFACE_API_KEY);
 
-// Using even more widely accessible models that should work with free API keys
-// These models are more reliably accessible to free/public API keys
-const DEFAULT_MODEL = 'gpt2';
-const FALLBACK_MODELS = ['distilgpt2', 'distilbert-base-uncased', 'bert-base-uncased'];
+// Using the Mistral model as default - far more powerful than basic models
+// PRIMARY: Use Mistral model (instruction-tuned, powerful for complex reasoning)
+const DEFAULT_MODEL = 'mistralai/Mistral-7B-Instruct-v0.2';
+
+// FALLBACKS: Other powerful models that can produce reasonable results
+// Listed in order of preference - larger/newer models first
+const FALLBACK_MODELS = [
+  'meta-llama/Llama-2-7b-chat-hf', 
+  'google/flan-t5-xl',
+  'bigscience/bloom-1b7',
+  'tiiuae/falcon-7b-instruct'
+];
 
 /**
  * Search through policies using Hugging Face's AI to find the most relevant information
@@ -44,9 +52,10 @@ export async function searchPoliciesWithAI(query: string, policies: Policy[]): P
     // Try keyword-based search first (always works as a fallback)
     const keywordResult = performKeywordSearch(query, validPolicies);
     
-    // If we found a good match with keywords, return it right away
-    if (keywordResult.policyId && keywordResult.confidence > 0.7) {
-      console.log("Using keyword search results (high confidence)");
+    // Only use keyword search if it's extremely high confidence (almost perfect match)
+    // This increases the likelihood of using AI for most queries
+    if (keywordResult.policyId && keywordResult.confidence > 0.95) {
+      console.log("Using keyword search results (extremely high confidence)");
       return keywordResult;
     }
     
@@ -68,22 +77,30 @@ export async function searchPoliciesWithAI(query: string, policies: Policy[]): P
       return `POLICY #${p.id} - ${p.title}:\n${cleanContent}\n\n`;
     }).join('');
 
-    // Simplified prompt format for flan-t5-xl and gpt2 models
-    const prompt = `You are a policy search system. Find information in these company policies:
+    // Enhanced prompt format for advanced language models like Mistral and Llama
+    const prompt = `<s>[INST] You are PolicyBot, an AI assistant specializing in finding information in company policies.
+
+I need your help answering a question based on these company policies:
 
 ${context}
 
-User question: ${query}
+USER QUESTION: ${query}
 
-Instructions:
-1. Find the most relevant information from the policies for this question.
-2. Use exact quotes from the policies - don't make things up.
-3. Provide the policy ID and quote the relevant section.
-4. If no policy has relevant information, clearly state that.
-5. Give a confidence score from 0 to 1.
+Your task:
+1. Carefully read each policy and identify the one that best answers the question
+2. Extract and quote the EXACT text from the policy that provides the answer
+3. Include the policy ID number in your response
+4. Assess your confidence in the answer (from 0.0 to 1.0)
+5. If no policy directly addresses the question, clearly state this fact
 
-Format your response as JSON:
-{"policyId": 2, "answer": "According to Policy #2, employees must report incidents within 24 hours", "confidence": 0.9}`;
+Format your response ONLY as a JSON object with these fields:
+- policyId: The numeric ID of the policy that contains the answer
+- answer: A quoted excerpt from the policy with the relevant information
+- confidence: A number between 0.0 and 1.0 indicating your confidence level
+
+JSON EXAMPLE RESPONSE:
+{"policyId": 2, "answer": "According to Policy #2, 'employees must report incidents within 24 hours'", "confidence": 0.9}
+[/INST]`;
 
     // Call the model with enhanced error handling and fallback
     let response: any = null;
@@ -93,9 +110,11 @@ Format your response as JSON:
         model: DEFAULT_MODEL,
         inputs: prompt,
         parameters: {
-          max_new_tokens: 500,
-          temperature: 0.3, // Low temperature for more deterministic output
+          max_new_tokens: 800,  // Larger token count for more detailed responses
+          temperature: 0.2,     // Lower temperature for more consistent, focused answers
           return_full_text: false,
+          top_p: 0.9,           // Top-p sampling for better quality outputs
+          repetition_penalty: 1.2 // Prevent repetitive responses
         }
       });
       console.log("Primary model response received successfully");
@@ -114,9 +133,11 @@ Format your response as JSON:
             model: fallbackModel,
             inputs: prompt,
             parameters: {
-              max_new_tokens: 500,
-              temperature: 0.3,
+              max_new_tokens: 800,  // Larger token count for more detailed responses
+              temperature: 0.2,     // Lower temperature for more consistent, focused answers
               return_full_text: false,
+              top_p: 0.9,           // Top-p sampling for better quality outputs
+              repetition_penalty: 1.2 // Prevent repetitive responses
             }
           });
           console.log(`Fallback model ${fallbackModel} response received successfully`);
@@ -348,15 +369,33 @@ export async function analyzePolicyContent(policyContent: string): Promise<{
     // Try algorithmic analysis first as a reliable fallback
     const backupAnalysis = generateBasicAnalysis(policyContent);
     
-    // Simplified prompt format for flan-t5-xl and gpt2 models
-    const prompt = `Analyze this policy document and provide:
-1. A concise summary (maximum 3 sentences)
-2. 3-5 key points from the document
+    // Enhanced prompt format for advanced language models like Mistral and Llama
+    const prompt = `<s>[INST] You are PolicyBot, an AI assistant specializing in analyzing company policies and procedures.
 
-Policy document:
+I need your help analyzing this policy document:
+
+"""
 ${policyContent}
+"""
 
-Format your response as JSON with fields "summary" and "keyPoints" (array of strings).`;
+Tasks:
+1. Provide a CONCISE summary of the policy (3 sentences maximum)
+2. Extract 3-5 KEY POINTS that represent the most important aspects of this policy
+3. Format your response as a JSON object with two fields:
+   - "summary": A string containing your concise summary
+   - "keyPoints": An array of strings, each containing one key point
+
+Example Response Format:
+{
+  "summary": "This policy outlines employee data protection requirements. It specifies how personal information should be handled and stored. Violations may result in disciplinary action.",
+  "keyPoints": [
+    "Personal data must be encrypted when stored electronically",
+    "Access to employee records is restricted to HR personnel only",
+    "Data breaches must be reported within 24 hours",
+    "Annual data protection training is mandatory"
+  ]
+}
+[/INST]`;
 
     // Call the model with enhanced error handling and fallback
     let response: any = null;
