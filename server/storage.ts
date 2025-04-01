@@ -168,11 +168,16 @@ export class MemStorage implements IStorage {
   async createUser(insertUser: InsertUser): Promise<User> {
     const id = this.userCurrentId++;
     const createdAt = new Date();
+    
+    // Make sure the role property is provided, or use the default
+    const role = insertUser.role || "admin";
+    
     const user: User = { 
       ...insertUser, 
       id, 
       createdAt,
-      apiKey: null // Initialize with null API key
+      apiKey: null, // Initialize with null API key
+      role // Ensure role is always defined
     };
     this.users.set(id, user);
     return user;
@@ -232,7 +237,18 @@ export class MemStorage implements IStorage {
     const id = this.policyCurrentId++;
     const createdAt = new Date();
     const updatedAt = new Date();
-    const policy: Policy = { ...insertPolicy, id, createdAt, updatedAt };
+    
+    // Ensure description is non-undefined (null is acceptable)
+    const description = insertPolicy.description === undefined ? null : insertPolicy.description;
+    
+    const policy: Policy = { 
+      ...insertPolicy, 
+      id, 
+      createdAt, 
+      updatedAt,
+      description 
+    };
+    
     this.policies.set(id, policy);
     return policy;
   }
@@ -259,7 +275,12 @@ export class MemStorage implements IStorage {
   async getSearchQueries(userId: number): Promise<SearchQuery[]> {
     return Array.from(this.searchQueries.values())
       .filter((query) => query.userId === userId)
-      .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+      .sort((a, b) => {
+        // Handle potential null timestamps
+        const aTime = a.timestamp?.getTime() ?? 0;
+        const bTime = b.timestamp?.getTime() ?? 0;
+        return bTime - aTime;
+      });
   }
   
   async createSearchQuery(insertQuery: InsertSearchQuery): Promise<SearchQuery> {
@@ -273,19 +294,41 @@ export class MemStorage implements IStorage {
   // Activity operations
   async getActivities(): Promise<Activity[]> {
     return Array.from(this.activities.values())
-      .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+      .sort((a, b) => {
+        // Handle potential null timestamps
+        const aTime = a.timestamp?.getTime() ?? 0;
+        const bTime = b.timestamp?.getTime() ?? 0;
+        return bTime - aTime;
+      });
   }
   
   async getActivityByUser(userId: number): Promise<Activity[]> {
     return Array.from(this.activities.values())
       .filter((activity) => activity.userId === userId)
-      .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+      .sort((a, b) => {
+        // Handle potential null timestamps
+        const aTime = a.timestamp?.getTime() ?? 0;
+        const bTime = b.timestamp?.getTime() ?? 0;
+        return bTime - aTime;
+      });
   }
   
   async createActivity(insertActivity: InsertActivity): Promise<Activity> {
     const id = this.activityCurrentId++;
     const timestamp = new Date();
-    const activity: Activity = { ...insertActivity, id, timestamp };
+    
+    // Ensure optional fields are non-undefined (null is acceptable)
+    const details = insertActivity.details === undefined ? null : insertActivity.details;
+    const resourceId = insertActivity.resourceId === undefined ? null : insertActivity.resourceId;
+    
+    const activity: Activity = { 
+      ...insertActivity, 
+      id, 
+      timestamp,
+      details,
+      resourceId
+    };
+    
     this.activities.set(id, activity);
     return activity;
   }

@@ -1,7 +1,9 @@
 // Configuration
 // Try to get the URL from storage, fall back to Replit URL if not found
 // IMPORTANT: HTTPS is required for Chrome extensions due to security restrictions
-let API_BASE_URL = 'https://yourreplit.repl.co';
+let API_BASE_URL = 'https://your-server-url.repl.co';
+
+// Make sure you update this with your actual Replit URL before using the extension
 
 // Function to get stored API URL or use default
 function getApiBaseUrl() {
@@ -18,6 +20,27 @@ function getApiBaseUrl() {
 
 // Function to save API URL
 function saveApiBaseUrl(url) {
+  // Normalize the URL before saving
+  if (url) {
+    // Remove trailing slashes
+    while (url.endsWith('/')) {
+      url = url.slice(0, -1);
+    }
+    
+    // Ensure https:// prefix
+    if (url.toLowerCase().startsWith('http://')) {
+      url = 'https://' + url.substring(7);
+    } else if (!url.toLowerCase().startsWith('https://')) {
+      url = 'https://' + url;
+    }
+    
+    // Ensure proper casing (lowercase for protocol)
+    if (url.toUpperCase().startsWith('HTTPS://')) {
+      url = 'https://' + url.substring(8);
+    }
+  }
+  
+  console.log("Saving normalized API URL:", url);
   chrome.storage.local.set({ apiBaseUrl: url });
   API_BASE_URL = url;
 }
@@ -143,9 +166,27 @@ document.addEventListener('DOMContentLoaded', function() {
       try {
         // Make sure the URL is HTTPS, not HTTP (Chrome security restriction)
         let loginUrl = API_BASE_URL;
-        if (loginUrl.startsWith('http://')) {
+        
+        // Fix capitalization issues in HTTPS
+        if (loginUrl.toUpperCase().startsWith('HTTPS://')) {
+          loginUrl = 'https://' + loginUrl.substring(8);
+        }
+        
+        // Convert HTTP to HTTPS
+        if (loginUrl.toLowerCase().startsWith('http://')) {
           console.log("Converting HTTP URL to HTTPS for security reasons");
-          loginUrl = loginUrl.replace('http://', 'https://');
+          loginUrl = 'https://' + loginUrl.substring(7);
+        }
+        
+        // Add https:// if missing
+        if (!loginUrl.toLowerCase().startsWith('https://')) {
+          console.log("Adding HTTPS protocol to URL");
+          loginUrl = 'https://' + loginUrl;
+        }
+        
+        // Remove any trailing slashes
+        while (loginUrl.endsWith('/')) {
+          loginUrl = loginUrl.slice(0, -1);
         }
         
         console.log(`Sending login request to: ${loginUrl}/api/login`);
@@ -189,11 +230,22 @@ document.addEventListener('DOMContentLoaded', function() {
       
       let userData;
       try {
-        userData = await response.json();
-        console.log("Login successful, user data:", userData);
+        // First, try to get the text response to debug
+        const responseText = await response.text();
+        console.log("Login raw response:", responseText);
+        
+        // Try to parse it as JSON
+        try {
+          userData = JSON.parse(responseText);
+          console.log("Login successful, user data:", userData);
+        } catch (jsonError) {
+          console.error("Error parsing JSON:", jsonError);
+          console.error("Response was not valid JSON:", responseText);
+          throw new Error('Invalid response format from server. Response was: ' + responseText.substring(0, 100));
+        }
       } catch (e) {
-        console.error("Error parsing user data:", e);
-        throw new Error('Invalid response format from server. Expected JSON.');
+        console.error("Error handling response:", e);
+        throw new Error('Error processing server response: ' + e.message);
       }
       
       // Get API key
@@ -310,9 +362,27 @@ document.addEventListener('DOMContentLoaded', function() {
       
       // Make sure the URL is HTTPS, not HTTP (Chrome security restriction)
       let searchUrl = API_BASE_URL;
-      if (searchUrl.startsWith('http://')) {
+      
+      // Fix capitalization issues in HTTPS
+      if (searchUrl.toUpperCase().startsWith('HTTPS://')) {
+        searchUrl = 'https://' + searchUrl.substring(8);
+      }
+      
+      // Convert HTTP to HTTPS
+      if (searchUrl.toLowerCase().startsWith('http://')) {
         console.log("Converting HTTP URL to HTTPS for security reasons");
-        searchUrl = searchUrl.replace('http://', 'https://');
+        searchUrl = 'https://' + searchUrl.substring(7);
+      }
+      
+      // Add https:// if missing
+      if (!searchUrl.toLowerCase().startsWith('https://')) {
+        console.log("Adding HTTPS protocol to URL");
+        searchUrl = 'https://' + searchUrl;
+      }
+      
+      // Remove any trailing slashes
+      while (searchUrl.endsWith('/')) {
+        searchUrl = searchUrl.slice(0, -1);
       }
       
       console.log(`Searching with query: "${query}" at ${searchUrl}/api/extension/search`);
@@ -468,10 +538,29 @@ document.addEventListener('DOMContentLoaded', function() {
   function openDashboard() {
     // Make sure we use HTTPS for opening the dashboard too
     let dashboardUrl = API_BASE_URL;
-    if (dashboardUrl.startsWith('http://')) {
-      console.log("Converting dashboard HTTP URL to HTTPS");
-      dashboardUrl = dashboardUrl.replace('http://', 'https://');
+    
+    // Fix capitalization issues in HTTPS
+    if (dashboardUrl.toUpperCase().startsWith('HTTPS://')) {
+      dashboardUrl = 'https://' + dashboardUrl.substring(8);
     }
+    
+    // Convert HTTP to HTTPS
+    if (dashboardUrl.toLowerCase().startsWith('http://')) {
+      console.log("Converting dashboard HTTP URL to HTTPS");
+      dashboardUrl = 'https://' + dashboardUrl.substring(7);
+    }
+    
+    // Add https:// if missing
+    if (!dashboardUrl.toLowerCase().startsWith('https://')) {
+      console.log("Adding HTTPS protocol to dashboard URL");
+      dashboardUrl = 'https://' + dashboardUrl;
+    }
+    
+    // Remove any trailing slashes
+    while (dashboardUrl.endsWith('/')) {
+      dashboardUrl = dashboardUrl.slice(0, -1);
+    }
+    
     chrome.tabs.create({ url: dashboardUrl });
   }
 

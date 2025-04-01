@@ -205,15 +205,25 @@ export default function DashboardPage() {
   };
   
   const handlePolicySubmit = (data: any) => {
+    // Convert categoryId to a number (it comes as a string from the form)
+    const processedData = {
+      ...data,
+      categoryId: parseInt(data.categoryId),
+      createdBy: user?.id // Include the current user ID
+      // policyRef will be generated on the server
+    };
+    
+    console.log("Submitting policy data:", processedData);
+    
     if (selectedPolicy) {
       // Update existing policy
       updatePolicyMutation.mutate({
         id: selectedPolicy.id,
-        data,
+        data: processedData,
       });
     } else {
       // Create new policy
-      createPolicyMutation.mutate(data);
+      createPolicyMutation.mutate(processedData);
     }
   };
   

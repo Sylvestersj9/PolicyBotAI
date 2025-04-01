@@ -53,8 +53,16 @@ export default function PoliciesPage() {
   const createPolicyMutation = useMutation({
     mutationFn: async (policyData: any) => {
       try {
-        console.log("Sending policy data to server:", policyData);
-        const res = await apiRequest("POST", "/api/policies", policyData);
+        // Process the policy data before sending
+        const processedData = {
+          ...policyData,
+          categoryId: parseInt(policyData.categoryId),
+          createdBy: user?.id // Include the current user ID
+          // policyRef will be generated on the server
+        };
+        
+        console.log("Sending policy data to server:", processedData);
+        const res = await apiRequest("POST", "/api/policies", processedData);
         
         if (!res.ok) {
           // Try to extract error details from response
