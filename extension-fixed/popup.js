@@ -3,8 +3,6 @@
 // IMPORTANT: HTTPS is required for Chrome extensions due to security restrictions
 let API_BASE_URL = 'https://policybotai.replit.app';
 
-// Replit automatically adds HTTPS for production deployments
-
 // Function to get stored API URL or use default
 function getApiBaseUrl() {
   return new Promise((resolve) => {
@@ -212,7 +210,7 @@ document.addEventListener('DOMContentLoaded', function() {
       // Normalize URL for security
       const loginUrl = normalizeUrl(API_BASE_URL);
       
-      console.log(`Sending login request to: ${loginUrl}/api/extension/login`);
+      console.log(`Sending login request to: ${loginUrl}/api/login`);
       
       // Add more detailed debugging information
       const requestStartTime = new Date().getTime();
@@ -221,7 +219,7 @@ document.addEventListener('DOMContentLoaded', function() {
       let response;
       try {
         response = await Promise.race([
-          fetch(`${loginUrl}/api/extension/login`, {
+          fetch(`${loginUrl}/api/login`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -259,28 +257,68 @@ document.addEventListener('DOMContentLoaded', function() {
         throw new Error(errorMessage);
       }
 
-      const data = await response.json();
-      
-      if (!data.success || !data.apiKey) {
-        throw new Error('Invalid server response: API key not received');
+      let userData;
+      try {
+        userData = await response.json();
+      } catch (e) {
+        throw new Error('Invalid response format from server. Expected JSON.');
       }
       
-      // Save user data and API key in storage
-      apiKey = data.apiKey;
-      currentUser = data.user;
+      // Get API key
+      console.log(`Attempting to get API key from: ${loginUrl}/api/extension/generate-key`);
+      let keyResponse;
+      try {
+        keyResponse = await fetch(`${loginUrl}/api/extension/generate-key`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          },
+          credentials: 'include' // Include cookies for session authentication
+        });
+      } catch (fetchError) {
+        console.error("Fetch error during API key generation:", fetchError);
+        throw new Error(`Network error during API key generation: ${fetchError.message}`);
+      }
       
+      if (!keyResponse.ok) {
+        let errorMessage = 'Failed to get API key';
+        try {
+          const errorData = await keyResponse.json();
+          if (errorData && errorData.message) {
+            errorMessage = errorData.message;
+          }
+        } catch (e) {
+          errorMessage = `API key generation failed with status ${keyResponse.status}`;
+        }
+        throw new Error(errorMessage);
+      }
+      
+      let keyData;
+      try {
+        keyData = await keyResponse.json();
+        if (!keyData || !keyData.apiKey) {
+          throw new Error('No API key returned from server');
+        }
+      } catch (e) {
+        throw new Error('Invalid response format from server. Expected JSON with apiKey property.');
+      }
+      
+      apiKey = keyData.apiKey;
+      
+      // Save to local storage
+      currentUser = userData;
       chrome.storage.local.set({ 
-        user: data.user,
-        apiKey: data.apiKey,
-        apiBaseUrl: loginUrl,
-        loggedIn: true
+        apiKey: keyData.apiKey,
+        user: userData,
+        apiBaseUrl: loginUrl
       });
       
       // Update the background script with the new API key
       chrome.runtime.sendMessage({
         action: 'updateApiInfo',
         data: {
-          apiKey: data.apiKey,
+          apiKey: keyData.apiKey,
           apiBaseUrl: loginUrl
         }
       });
@@ -293,76 +331,23 @@ document.addEventListener('DOMContentLoaded', function() {
       submitBtn.textContent = originalBtnText;
       submitBtn.disabled = false;
       
-      // Indicate success with a message that fades away
-      const resultBox = document.createElement('div');
-      resultBox.textContent = 'Login successful!';
-      resultBox.style.color = 'green';
-      resultBox.style.padding = '10px';
-      resultBox.style.textAlign = 'center';
-      resultBox.style.fontWeight = 'bold';
-      loginForm.after(resultBox);
-      
-      setTimeout(() => {
-        resultBox.remove();
-      }, 3000);
     } catch (error) {
       console.error('Login error:', error);
-      
-      // Display the error message to the user
-      const errorBox = document.createElement('div');
-      errorBox.className = 'error-item';
-      errorBox.textContent = error.message || 'Login failed. Please check your credentials.';
-      errorBox.style.color = 'red';
-      errorBox.style.padding = '10px';
-      errorBox.style.marginTop = '10px';
-      errorBox.style.border = '1px solid red';
-      errorBox.style.borderRadius = '4px';
-      errorBox.style.backgroundColor = '#ffebee';
-      
-      // Add error hint if needed
-      if (error.message && error.message.includes('Failed to fetch')) {
-        const errorHint = document.createElement('div');
-        errorHint.className = 'error-hint';
-        errorHint.innerHTML = `
-          <p>This might be due to:</p>
-          <ul>
-            <li>Server unavailable or unreachable</li>
-            <li>CORS policy restrictions</li>
-            <li>Network connectivity issues</li>
-          </ul>
-          <p>Make sure the API URL is correct and the server is running.</p>
-        `;
-        errorBox.appendChild(errorHint);
+      // Reset button state
+      const submitBtn = document.getElementById('submit-login');
+      if (submitBtn) {
+        submitBtn.textContent = 'Login';
+        submitBtn.disabled = false;
       }
       
-      const formActions = document.querySelector('.form-actions');
-      formActions.after(errorBox);
-      
-      // Reset the button
-      const submitBtn = document.getElementById('submit-login');
-      submitBtn.textContent = 'Login';
-      submitBtn.disabled = false;
-      
-      // Auto-remove the error message after 10 seconds
-      setTimeout(() => {
-        errorBox.remove();
-      }, 10000);
+      alert(`Login error: ${error.message}`);
     }
   }
 
   // Handle logout
   function handleLogout() {
     // Clear local storage
-    chrome.storage.local.remove(['apiKey', 'user', 'loggedIn']);
-    
-    // Update background script
-    chrome.runtime.sendMessage({
-      action: 'updateApiInfo',
-      data: {
-        apiKey: null
-      }
-    });
-    
+    chrome.storage.local.remove(['apiKey', 'user']);
     apiKey = null;
     currentUser = null;
     
@@ -386,20 +371,7 @@ document.addEventListener('DOMContentLoaded', function() {
     
     try {
       // Show loading state
-      resultsContent.innerHTML = `
-        <div class="result-item">
-          <div style="display: flex; align-items: center; justify-content: center; padding: 20px;">
-            <div style="border: 3px solid #f3f3f3; border-radius: 50%; border-top: 3px solid #1a73e8; width: 24px; height: 24px; animation: spin 1s linear infinite; margin-right: 10px;"></div>
-            <p>Searching policies for: "${query}"...</p>
-          </div>
-        </div>
-        <style>
-          @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-          }
-        </style>
-      `;
+      resultsContent.innerHTML = '<p>Searching policies...</p>';
       resultsSection.classList.remove('hidden');
       
       // Disable search button during request
@@ -407,133 +379,140 @@ document.addEventListener('DOMContentLoaded', function() {
       searchBtn.textContent = 'Searching...';
       searchBtn.disabled = true;
       
-      // Ask background script to do the search (it has the API key)
-      chrome.runtime.sendMessage({
-        action: 'searchPolicies',
-        data: { query }
-      }, response => {
-        // Re-enable search button
-        searchBtn.textContent = searchButtonOrigText;
-        searchBtn.disabled = false;
-        
-        if (response.success) {
-          // Add this search to history
-          addToSearchHistory(query, response.result);
-          
-          // Display results
-          displaySearchResults(response.result, query);
-        } else {
-          // Show error
-          resultsContent.innerHTML = `
-            <div class="result-item error">
-              <h4>Search Error</h4>
-              <p>${response.error || 'Failed to search policies. Please try again.'}</p>
-              <div class="error-hint">
-                This might be due to a server error or network issue. Please try again or contact your administrator.
-              </div>
-            </div>
-          `;
-        }
+      console.log(`Searching with query: "${query}" at ${API_BASE_URL}/api/extension/search`);
+      
+      const response = await fetch(`${API_BASE_URL}/api/extension/search`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-Key': apiKey
+        },
+        body: JSON.stringify({ query })
       });
+      
+      if (!response.ok) {
+        let errorMessage = 'Search failed';
+        try {
+          // Try to parse error message from response
+          const errorData = await response.json();
+          if (errorData && errorData.message) {
+            errorMessage = errorData.message;
+          }
+        } catch (e) {
+          // If response isn't JSON, use text or status
+          errorMessage = `Search failed with status ${response.status}`;
+        }
+        throw new Error(errorMessage);
+      }
+      
+      let result;
+      try {
+        result = await response.json();
+      } catch (e) {
+        throw new Error('Invalid response format from server. Expected JSON.');
+      }
+      
+      // Update search history
+      const newSearch = {
+        query,
+        timestamp: new Date().toISOString(),
+        result
+      };
+      searchHistory = [newSearch, ...searchHistory.slice(0, 4)];
+      chrome.storage.local.set({ searchHistory });
+      updateRecentSearches();
+      
+      // Display results
+      displaySearchResults(result, query);
+      
+      // Reset search button
+      searchBtn.textContent = searchButtonOrigText;
+      searchBtn.disabled = false;
     } catch (error) {
       console.error('Search error:', error);
       
-      // Re-enable search button
+      // Reset search button
       searchBtn.textContent = 'Search';
       searchBtn.disabled = false;
       
-      // Show error
-      resultsContent.innerHTML = `
-        <div class="result-item error">
-          <h4>Search Error</h4>
-          <p>${error.message || 'Failed to search policies. Please try again.'}</p>
-        </div>
-      `;
+      resultsContent.innerHTML = `<p>Error: ${error.message}</p>
+        <p>Please check your connection and API URL settings.</p>
+        <p>Current API URL: ${API_BASE_URL}</p>
+        <button id="fix-api-url" class="error-action">Update API URL</button>`;
+      
+      // Add event listener to the fix button
+      document.getElementById('fix-api-url')?.addEventListener('click', () => {
+        toggleLoginForm();
+        // Focus the API URL input
+        setTimeout(() => {
+          const apiUrlInput = document.getElementById('api-url-input');
+          if (apiUrlInput) {
+            apiUrlInput.focus();
+          }
+        }, 100);
+      });
     }
   }
 
   // Display search results
   function displaySearchResults(result, query) {
-    // Clear previous results
-    resultsContent.innerHTML = '';
+    let html = '';
     
-    // Calculate confidence percentage for display
-    const confidencePercentage = Math.round((result.confidence || 0) * 100);
-    
-    // Create result HTML
-    const resultHtml = `
-      <div class="result-item">
-        <h4>Search Results for: "${query}"</h4>
-        <p>${result.answer || 'No answer found'}</p>
-        <div class="result-meta">
-          ${result.policyName ? `<span>Source: ${result.policyName}</span>` : ''}
-          <div class="confidence">
-            Confidence: 
-            <div class="confidence-bar">
-              <div class="confidence-level" style="width: ${confidencePercentage}%;"></div>
+    if (result.policyId) {
+      const confidencePercent = Math.round(result.confidence * 100);
+      
+      html = `
+        <div class="result-item">
+          <h4>${result.policyTitle || 'Policy'}</h4>
+          <p>${result.answer}</p>
+          <div class="result-meta">
+            <span>Reference: Policy #${result.policyId}</span>
+            <div class="confidence">
+              <span>${confidencePercent}%</span>
+              <div class="confidence-bar">
+                <div class="confidence-level" style="width: ${confidencePercent}%"></div>
+              </div>
             </div>
-            ${confidencePercentage}%
           </div>
         </div>
-      </div>
-    `;
-    
-    resultsContent.innerHTML = resultHtml;
-  }
-
-  // Add search to history
-  function addToSearchHistory(query, result) {
-    // Add to front of array (most recent first)
-    searchHistory.unshift({
-      query,
-      result,
-      timestamp: new Date().toISOString()
-    });
-    
-    // Limit to 10 entries
-    if (searchHistory.length > 10) {
-      searchHistory = searchHistory.slice(0, 10);
+      `;
+    } else {
+      html = `
+        <div class="result-item">
+          <p>${result.answer}</p>
+        </div>
+      `;
     }
     
-    // Save to storage
-    chrome.storage.local.set({ searchHistory });
-    
-    // Update UI
-    updateRecentSearches();
+    resultsContent.innerHTML = html;
   }
 
   // Update recent searches list
   function updateRecentSearches() {
-    if (!searchHistory || searchHistory.length === 0) {
-      recentSearches.classList.add('hidden');
-      return;
-    }
-    
-    recentSearches.classList.remove('hidden');
-    recentSearchesList.innerHTML = '';
-    
-    searchHistory.forEach(item => {
-      const li = document.createElement('li');
-      li.textContent = item.query;
-      li.addEventListener('click', () => {
-        // Set the search input to this query
-        searchInput.value = item.query;
-        
-        // Show the result directly
-        resultsSection.classList.remove('hidden');
-        displaySearchResults(item.result, item.query);
-      });
+    if (searchHistory.length > 0) {
+      recentSearches.classList.remove('hidden');
+      recentSearchesList.innerHTML = '';
       
-      recentSearchesList.appendChild(li);
-    });
+      searchHistory.forEach(item => {
+        const li = document.createElement('li');
+        li.textContent = item.query;
+        li.addEventListener('click', () => {
+          searchInput.value = item.query;
+          displaySearchResults(item.result, item.query);
+          resultsSection.classList.remove('hidden');
+        });
+        recentSearchesList.appendChild(li);
+      });
+    } else {
+      recentSearches.classList.add('hidden');
+    }
   }
 
-  // Open the main app dashboard
+  // Open the main dashboard
   function openDashboard() {
-    const url = normalizeUrl(API_BASE_URL);
-    chrome.tabs.create({ url });
+    chrome.tabs.create({ url: API_BASE_URL });
   }
 
-  // Run initialization
+  // Initialize the extension
   init();
 });
