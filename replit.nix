@@ -1,6 +1,7 @@
-{pkgs}: {
+{ pkgs }: {
   deps = [
-    pkgs.zip
-    pkgs.postgresql
+    pkgs.python3Packages.sentence-transformers
+    pkgs.python3Packages.faiss
+    pkgs.python3Packages.numpy
   ];
 }
