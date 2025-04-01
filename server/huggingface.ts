@@ -1,15 +1,13 @@
 import { HfInference } from '@huggingface/inference';
 import { Policy } from '@shared/schema';
 
-// Initialize the Hugging Face client
-// For free usage, we can use a public model from Hugging Face
-// If you want to use your own API key (recommended for production), you can use:
-// const hf = new HfInference(process.env.HUGGINGFACE_API_KEY);
-const hf = new HfInference();
+// Initialize the Hugging Face client with API key
+// Using API key allows access to more powerful models and higher rate limits
+const hf = new HfInference(process.env.HUGGINGFACE_API_KEY);
 
 // Default model to use for text generation
-// mistralai/Mistral-7B-Instruct-v0.2 is a great open-source model
-const DEFAULT_MODEL = 'mistralai/Mistral-7B-Instruct-v0.2';
+// Using a more powerful model with API key
+const DEFAULT_MODEL = 'meta-llama/Meta-Llama-3-8B-Instruct';
 
 /**
  * Search through policies using Hugging Face's AI to find the most relevant information
