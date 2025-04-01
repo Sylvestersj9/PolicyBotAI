@@ -87,25 +87,44 @@ export class MemStorage implements IStorage {
   }
   
   private async createDefaultTestUser() {
-    // Use a hardcoded hash for "password123" 
-    // This is a valid scrypt hash for "password123" that will work with the comparePasswords function
-    const hashedPassword = "5dde749c8e9dfad799851738de21d4959869d34caec869cce2d0428ba4ef0bc085d5ef9e4be6345367c86474d45a4b26d3e57b4239a398b25f541c66c19f4a27.ad11694e1ef12238faefff3d4a4840fd";
-    
-    // Create a test user if none exists
-    const testUser: InsertUser = {
-      username: "admin",
-      password: hashedPassword, 
-      name: "Admin User",
-      email: "admin@example.com",
-      company: "Test Company",
-      role: "admin"
-    };
-    
-    // Check if user doesn't already exist
-    const existingUser = await this.getUserByUsername(testUser.username);
-    if (!existingUser) {
-      await this.createUser(testUser);
-      console.log('Created default test user: admin/password123');
+    try {
+      // We'll create a regular user through the normal registration API
+      const testUser1: InsertUser = {
+        username: "admin",
+        // This is the plain password - we'll register through the API to handle hashing
+        password: "password123", 
+        name: "Admin User",
+        email: "admin@example.com",
+        company: "Test Company",
+        role: "admin"
+      };
+      
+      // Check if user doesn't already exist
+      const existingUser = await this.getUserByUsername(testUser1.username);
+      if (!existingUser) {
+        // Import the hashPassword function from auth.ts
+        // In a normal production environment, we'd use the auth service directly
+        // but for this prototype with in-memory DB, we'll handle it here
+        const { scrypt, randomBytes } = await import('crypto');
+        const { promisify } = await import('util');
+        const scryptAsync = promisify(scrypt);
+        
+        // Hash the password using the same algorithm from auth.ts
+        const salt = randomBytes(16).toString("hex");
+        const buf = (await scryptAsync(testUser1.password, salt, 64)) as Buffer;
+        const hashedPassword = `${buf.toString("hex")}.${salt}`;
+        
+        // Create user with hashed password
+        const actualUser: InsertUser = {
+          ...testUser1,
+          password: hashedPassword
+        };
+        
+        await this.createUser(actualUser);
+        console.log('Created default test user: admin/password123');
+      }
+    } catch (error) {
+      console.error("Error creating default test user:", error);
     }
   }
 
