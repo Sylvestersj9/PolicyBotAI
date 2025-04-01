@@ -53,11 +53,15 @@ export default function PoliciesPage() {
   const createPolicyMutation = useMutation({
     mutationFn: async (policyData: any) => {
       try {
+        if (!user || !user.id) {
+          throw new Error("User authentication required to create policy");
+        }
+        
         // Process the policy data before sending
         const processedData = {
           ...policyData,
           categoryId: parseInt(policyData.categoryId),
-          createdBy: user?.id // Include the current user ID
+          createdBy: user.id // Include the current user ID
           // policyRef will be generated on the server
         };
         
@@ -208,11 +212,20 @@ export default function PoliciesPage() {
   };
   
   const handlePolicySubmit = (data: any) => {
+    if (!user || !user.id) {
+      toast({
+        title: "Authentication required",
+        description: "You must be logged in to manage policies.",
+        variant: "destructive"
+      });
+      return;
+    }
+    
     // Convert categoryId from string to number for API
     const processedData = {
       ...data,
       categoryId: parseInt(data.categoryId),
-      createdBy: user?.id // This is required by the schema and was missing
+      createdBy: user.id // This is required by the schema
     };
     
     // Log the processed data to console for debugging
@@ -225,12 +238,9 @@ export default function PoliciesPage() {
         data: processedData,
       });
     } else {
-      // Create new policy - add policyRef for new policies
-      const policyRefData = {
-        ...processedData,
-        policyRef: `POL-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`
-      };
-      createPolicyMutation.mutate(policyRefData);
+      // We don't need to add policyRef here since it's generated on the server
+      // and we already include it in the API endpoint
+      createPolicyMutation.mutate(processedData);
     }
   };
   

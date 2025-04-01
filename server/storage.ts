@@ -514,12 +514,30 @@ export class DatabaseStorage implements IStorage {
   }
   
   async createPolicy(insertPolicy: InsertPolicy): Promise<Policy> {
-    const result = await this.db.insert(policies).values({
-      ...insertPolicy,
-      description: insertPolicy.description ?? null,
-    }).returning();
-    
-    return result[0];
+    try {
+      console.log("Creating policy with data:", JSON.stringify(insertPolicy));
+      
+      // Ensure description is not undefined (null is acceptable)
+      const description = insertPolicy.description === undefined ? null : insertPolicy.description;
+      
+      const result = await this.db.insert(policies).values({
+        ...insertPolicy,
+        description,
+        // Ensure we have timestamps (should normally be handled by defaultNow(), but let's be safe)
+        createdAt: new Date(),
+        updatedAt: new Date()
+      }).returning();
+      
+      if (!result || result.length === 0) {
+        throw new Error("No result returned from database after policy insertion");
+      }
+      
+      console.log("Policy created successfully:", result[0]);
+      return result[0];
+    } catch (error) {
+      console.error("Database error creating policy:", error);
+      throw new Error("Failed to create policy in database: " + (error instanceof Error ? error.message : String(error)));
+    }
   }
   
   async updatePolicy(id: number, updates: Partial<InsertPolicy>): Promise<Policy | undefined> {

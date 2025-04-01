@@ -181,13 +181,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       res.status(201).json(policy);
     } catch (error) {
+      console.error("Policy creation error:", error);
+      
       if (error instanceof z.ZodError) {
         return res.status(400).json({ 
           message: "Validation error", 
           errors: error.errors 
         });
       }
-      res.status(500).json({ message: "Failed to create policy" });
+      
+      // Provide more specific error message
+      let errorMessage = "Failed to create policy";
+      if (error instanceof Error) {
+        errorMessage += ": " + error.message;
+      }
+      
+      res.status(500).json({ message: errorMessage });
     }
   });
 
