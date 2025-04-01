@@ -11,6 +11,7 @@ import {
 } from "@shared/schema";
 import { z } from "zod";
 import { uploadSingleFile, processUploadedFile } from "./upload";
+import { uploadBase64File } from "./direct-upload";
 import path from "path";
 
 // Extend Express.Request interface to include the user and file properties
@@ -148,6 +149,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     }
   });
+  
+  // Direct upload endpoint using base64 encoding instead of multipart/form-data
+  app.post("/api/direct-upload", requireAuth, (req, res) => {
+    uploadBase64File(req, res);
+  });
+  
+  // Serve files from the public/uploads directory without auth for testing
+  app.use("/public/uploads", express.static(path.join(process.cwd(), "public", "uploads")));
 
   // Create a new policy
   app.post("/api/policies", requireAuth, async (req, res) => {

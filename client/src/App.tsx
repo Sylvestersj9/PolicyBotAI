@@ -8,6 +8,8 @@ import AuthPage from "@/pages/auth-page";
 import DashboardPage from "@/pages/dashboard-page";
 import PoliciesPage from "@/pages/policies-page";
 import AISearchPage from "@/pages/ai-search-page";
+import SettingsPage from "@/pages/settings-page";
+import HelpPage from "@/pages/help-page";
 import { ProtectedRoute } from "./lib/protected-route";
 
 function Router() {
@@ -16,6 +18,8 @@ function Router() {
       <ProtectedRoute path="/" component={DashboardPage} />
       <ProtectedRoute path="/policies" component={PoliciesPage} />
       <ProtectedRoute path="/ai-search" component={AISearchPage} />
+      <ProtectedRoute path="/settings" component={SettingsPage} />
+      <ProtectedRoute path="/help" component={HelpPage} />
       <Route path="/auth" component={AuthPage} />
       <Route component={NotFound} />
     </Switch>
