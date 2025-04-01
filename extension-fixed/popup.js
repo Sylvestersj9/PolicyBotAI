@@ -1,5 +1,25 @@
 // Configuration
-const API_BASE_URL = 'http://localhost:5000';
+// Try to get the URL from storage, fall back to localhost if not found
+let API_BASE_URL = 'http://localhost:5000';
+
+// Function to get stored API URL or use default
+function getApiBaseUrl() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(['apiBaseUrl'], (result) => {
+      if (result.apiBaseUrl) {
+        resolve(result.apiBaseUrl);
+      } else {
+        resolve(API_BASE_URL);
+      }
+    });
+  });
+}
+
+// Function to save API URL
+function saveApiBaseUrl(url) {
+  chrome.storage.local.set({ apiBaseUrl: url });
+  API_BASE_URL = url;
+}
 
 // DOM Elements
 document.addEventListener('DOMContentLoaded', function() {
@@ -24,7 +44,31 @@ document.addEventListener('DOMContentLoaded', function() {
   let searchHistory = [];
 
   // Initialize the extension
-  function init() {
+  async function init() {
+    // Load the API URL first
+    API_BASE_URL = await getApiBaseUrl();
+    
+    // Add settings/configuration section to the login form
+    const settingsHtml = `
+      <div class="form-group api-url-config" style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #eee;">
+        <label for="api-url">API Server URL</label>
+        <input type="text" id="api-url-input" value="${API_BASE_URL}" style="margin-bottom: 5px;">
+        <button type="button" id="save-api-url" style="width: 100%;">Save API URL</button>
+      </div>
+    `;
+    
+    // Add settings to login form
+    loginForm.insertAdjacentHTML('beforeend', settingsHtml);
+    
+    // Add event listener for the save API URL button
+    document.getElementById('save-api-url').addEventListener('click', () => {
+      const newUrl = document.getElementById('api-url-input').value.trim();
+      if (newUrl) {
+        saveApiBaseUrl(newUrl);
+        alert(`API URL updated to: ${newUrl}`);
+      }
+    });
+    
     // Load saved state
     chrome.storage.local.get(['apiKey', 'user', 'searchHistory'], (result) => {
       if (result.apiKey) {
@@ -85,6 +129,12 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     try {
+      // Show loading/progress indicator
+      const submitBtn = document.getElementById('submit-login');
+      const originalBtnText = submitBtn.textContent;
+      submitBtn.textContent = 'Logging in...';
+      submitBtn.disabled = true;
+      
       const response = await fetch(`${API_BASE_URL}/api/login`, {
         method: 'POST',
         headers: {
@@ -94,10 +144,34 @@ document.addEventListener('DOMContentLoaded', function() {
       });
       
       if (!response.ok) {
-        throw new Error('Login failed');
+        let errorMessage = 'Login failed';
+        try {
+          // Try to parse error message from response
+          const errorData = await response.json();
+          if (errorData && errorData.message) {
+            errorMessage = errorData.message;
+          }
+        } catch (e) {
+          // If response isn't JSON, use text or status
+          errorMessage = `Login failed with status ${response.status}`;
+          try {
+            const textError = await response.text();
+            if (textError) {
+              errorMessage += `: ${textError}`;
+            }
+          } catch (_) {
+            // Ignore if we can't get text
+          }
+        }
+        throw new Error(errorMessage);
       }
       
-      const userData = await response.json();
+      let userData;
+      try {
+        userData = await response.json();
+      } catch (e) {
+        throw new Error('Invalid response format from server. Expected JSON.');
+      }
       
       // Get API key
       const keyResponse = await fetch(`${API_BASE_URL}/api/extension/generate-key`, {
@@ -109,10 +183,28 @@ document.addEventListener('DOMContentLoaded', function() {
       });
       
       if (!keyResponse.ok) {
-        throw new Error('Failed to get API key');
+        let errorMessage = 'Failed to get API key';
+        try {
+          const errorData = await keyResponse.json();
+          if (errorData && errorData.message) {
+            errorMessage = errorData.message;
+          }
+        } catch (e) {
+          errorMessage = `API key generation failed with status ${keyResponse.status}`;
+        }
+        throw new Error(errorMessage);
       }
       
-      const keyData = await keyResponse.json();
+      let keyData;
+      try {
+        keyData = await keyResponse.json();
+        if (!keyData || !keyData.apiKey) {
+          throw new Error('No API key returned from server');
+        }
+      } catch (e) {
+        throw new Error('Invalid response format from server. Expected JSON with apiKey property.');
+      }
+      
       apiKey = keyData.apiKey;
       
       // Save to local storage
@@ -121,9 +213,21 @@ document.addEventListener('DOMContentLoaded', function() {
       
       updateUserInterface();
       loginForm.classList.add('hidden');
+      
+      // Reset button state
+      submitBtn.textContent = originalBtnText;
+      submitBtn.disabled = false;
+      
     } catch (error) {
       console.error('Login error:', error);
-      alert('Login failed. Please check your credentials and try again.');
+      // Reset button state
+      const submitBtn = document.getElementById('submit-login');
+      if (submitBtn) {
+        submitBtn.textContent = 'Login';
+        submitBtn.disabled = false;
+      }
+      
+      alert(`Login error: ${error.message}`);
     }
   }
 
@@ -157,6 +261,11 @@ document.addEventListener('DOMContentLoaded', function() {
       resultsContent.innerHTML = '<p>Searching policies...</p>';
       resultsSection.classList.remove('hidden');
       
+      // Disable search button during request
+      const searchButtonOrigText = searchBtn.textContent;
+      searchBtn.textContent = 'Searching...';
+      searchBtn.disabled = true;
+      
       const response = await fetch(`${API_BASE_URL}/api/extension/search`, {
         method: 'POST',
         headers: {
@@ -167,10 +276,34 @@ document.addEventListener('DOMContentLoaded', function() {
       });
       
       if (!response.ok) {
-        throw new Error('Search failed');
+        let errorMessage = 'Search failed';
+        try {
+          // Try to parse error message from response
+          const errorData = await response.json();
+          if (errorData && errorData.message) {
+            errorMessage = errorData.message;
+          }
+        } catch (e) {
+          // If response isn't JSON, use text or status
+          errorMessage = `Search failed with status ${response.status}`;
+          try {
+            const textError = await response.text();
+            if (textError) {
+              errorMessage += `: ${textError}`;
+            }
+          } catch (_) {
+            // Ignore if we can't get text
+          }
+        }
+        throw new Error(errorMessage);
       }
       
-      const result = await response.json();
+      let result;
+      try {
+        result = await response.json();
+      } catch (e) {
+        throw new Error('Invalid response format from server. Expected JSON.');
+      }
       
       // Update search history
       const newSearch = {
@@ -184,9 +317,33 @@ document.addEventListener('DOMContentLoaded', function() {
       
       // Display results
       displaySearchResults(result, query);
+      
+      // Reset search button
+      searchBtn.textContent = searchButtonOrigText;
+      searchBtn.disabled = false;
     } catch (error) {
       console.error('Search error:', error);
-      resultsContent.innerHTML = '<p>Error: Failed to search policies. Please try again later.</p>';
+      
+      // Reset search button
+      searchBtn.textContent = 'Search';
+      searchBtn.disabled = false;
+      
+      resultsContent.innerHTML = `<p>Error: ${error.message}</p>
+        <p>Please check your connection and API URL settings.</p>
+        <p>Current API URL: ${API_BASE_URL}</p>
+        <button id="fix-api-url" class="error-action">Update API URL</button>`;
+      
+      // Add event listener to the fix button
+      document.getElementById('fix-api-url')?.addEventListener('click', () => {
+        toggleLoginForm();
+        // Focus the API URL input
+        setTimeout(() => {
+          const apiUrlInput = document.getElementById('api-url-input');
+          if (apiUrlInput) {
+            apiUrlInput.focus();
+          }
+        }, 100);
+      });
     }
   }
 

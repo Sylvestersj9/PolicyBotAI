@@ -15,7 +15,12 @@
 
 3. **Configure the Extension**
    - By default, the extension connects to `http://localhost:5000`
-   - If your PolicyHub server is running on a different URL, you'll need to update the `API_BASE_URL` in the `popup.js` file
+   - You can change the API URL directly in the extension:
+     1. Click the PolicyHub icon in the toolbar
+     2. Click "Login" to show the login form
+     3. At the bottom of the login form, enter your server URL
+     4. Click "Save API URL"
+   - If you're using Replit, you should set the URL to your Replit app URL (https://your-repl-name.your-username.repl.co)
 
 ## Using the Extension
 
@@ -49,9 +54,18 @@
 3. **"Login failed" error**
    - Verify the server is running
    - Make sure you're using the correct username and password
-   - Check that the API_BASE_URL in popup.js points to your server
+   - Check that you've set the correct API URL in the extension settings
 
-4. **Search not working**
+4. **"Unexpected token 'N', 'Not Found' is not valid JSON" error**
+   - This means the extension can't connect to the API server
+   - Check that your server is running
+   - Update the API URL in the extension settings:
+     1. Click "Login" to show the login form
+     2. At the bottom of the form, enter the correct server URL
+     3. For Replit, use your full Replit URL (https://your-repl-name.your-username.repl.co)
+     4. Click "Save API URL"
+
+5. **Search not working**
    - Ensure you're logged in (you should see your username at the top)
    - Verify the server has the OpenAI API key configured for AI search
    - Check that there are policies in the system to search through
