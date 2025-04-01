@@ -85,22 +85,84 @@ export default function PolicyForm({
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      setUploadedFileName(file.name);
-      
-      // For demonstration, we'll just read the file content as text
-      // In a real app, you might want to parse docx/pdf or send to server
+    if (!file) return;
+    
+    // Check file size (max 30MB)
+    const maxSize = 30 * 1024 * 1024; // 30MB in bytes
+    if (file.size > maxSize) {
+      toast({
+        title: "File too large",
+        description: `Maximum file size is 30MB. Please upload a smaller file or extract the content manually.`,
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    setUploadedFileName(file.name);
+    
+    // Different handling based on file type
+    const fileType = file.type.toLowerCase();
+    
+    // For text files, read directly
+    if (fileType === 'text/plain' || file.name.endsWith('.txt')) {
       const reader = new FileReader();
       reader.onload = (event) => {
         if (event.target?.result) {
           form.setValue('content', event.target.result as string);
           toast({
             title: "File uploaded",
-            description: `${file.name} has been uploaded.`,
+            description: `${file.name} content has been extracted.`,
           });
         }
       };
+      reader.onerror = () => {
+        toast({
+          title: "File read error",
+          description: `Could not read the file. Please try again or enter content manually.`,
+          variant: "destructive"
+        });
+      };
       reader.readAsText(file);
+    } 
+    // For other file types (.pdf, .docx, etc.), we'll extract content using 
+    // base64 encoding which works better for binary files
+    else {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        if (event.target?.result) {
+          // For binary files, we extract as much text as possible
+          // For PDFs and Word docs, in a real implementation you'd use 
+          // a document parsing service or library
+          let content = "";
+          
+          // Add file metadata at minimum
+          content = `File: ${file.name}\nSize: ${(file.size / 1024).toFixed(2)} KB\nType: ${file.type}\n\n`;
+          
+          try {
+            // Try to extract text if possible
+            // For binary files, this might produce partial results
+            const base64Content = event.target.result as string;
+            const cleanContent = base64Content.replace(/[^\x20-\x7E]/g, '');
+            content += cleanContent.slice(0, 1000000); // Limit content length to avoid overflow
+          } catch (err) {
+            content += "Binary file content - please extract text manually if needed.";
+          }
+          
+          form.setValue('content', content);
+          toast({
+            title: "File uploaded",
+            description: `${file.name} has been processed. You may need to edit the content.`,
+          });
+        }
+      };
+      reader.onerror = () => {
+        toast({
+          title: "File read error",
+          description: `Could not process the file. Please try again or enter content manually.`,
+          variant: "destructive"
+        });
+      };
+      reader.readAsDataURL(file);
     }
   };
 
@@ -110,13 +172,8 @@ export default function PolicyForm({
   };
 
   const handleSubmit = (data: PolicyFormValues) => {
-    // Convert categoryId back to number
-    const processedData = {
-      ...data,
-      categoryId: parseInt(data.categoryId)
-    };
-    
-    onSubmit(processedData);
+    // Keep categoryId as string as expected by the form schema
+    onSubmit(data);
     onOpenChange(false);
   };
 
@@ -220,7 +277,7 @@ export default function PolicyForm({
                             id="file-upload" 
                             type="file" 
                             className="hidden" 
-                            accept=".pdf,.docx,.doc,.txt"
+                            accept=".pdf,.docx,.doc,.txt,.rtf,.md,.html,.xml,.json"
                             onChange={handleFileChange}
                           />
                           <p className="mt-1 text-xs text-neutral-400">

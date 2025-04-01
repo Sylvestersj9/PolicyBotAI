@@ -136,15 +136,21 @@ export default function PoliciesPage() {
   };
   
   const handlePolicySubmit = (data: any) => {
+    // Convert categoryId from string to number for API
+    const processedData = {
+      ...data,
+      categoryId: parseInt(data.categoryId)
+    };
+    
     if (selectedPolicy) {
       // Update existing policy
       updatePolicyMutation.mutate({
         id: selectedPolicy.id,
-        data,
+        data: processedData,
       });
     } else {
       // Create new policy
-      createPolicyMutation.mutate(data);
+      createPolicyMutation.mutate(processedData);
     }
   };
   
