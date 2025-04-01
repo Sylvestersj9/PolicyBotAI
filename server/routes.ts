@@ -1,4 +1,4 @@
-import type { Express } from "express";
+import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupAuth } from "./auth";
@@ -10,10 +10,32 @@ import {
   insertActivitySchema
 } from "@shared/schema";
 import { z } from "zod";
+import multer from "multer";
+import path from "path";
+
+// Extend Express.Request interface to include the user and file properties
+declare global {
+  namespace Express {
+    interface Request {
+      user?: {
+        id: number;
+        [key: string]: any;
+      };
+    }
+  }
+}
+
+// Configure multer for file uploads
+const upload = multer({
+  limits: {
+    fileSize: 50 * 1024 * 1024, // 50MB limit
+  },
+  storage: multer.memoryStorage()
+});
 
 // Auth middleware to check if the user is authenticated
-function requireAuth(req: any, res: any, next: any) {
-  if (req.isAuthenticated() && req.user) {
+function requireAuth(req: Request, res: Response, next: NextFunction) {
+  if (req.isAuthenticated && req.isAuthenticated() && req.user) {
     return next();
   }
   res.status(401).json({ message: "Unauthorized" });
@@ -95,6 +117,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(policy);
     } catch (error) {
       res.status(500).json({ message: "Failed to get policy" });
+    }
+  });
+
+  // Handle file upload for policies
+  app.post("/api/upload-policy-file", requireAuth, upload.single('file'), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ message: "No file uploaded" });
+      }
+      
+      // Convert file buffer to string
+      let content = "";
+      
+      try {
+        // Try to extract text directly
+        content = req.file.buffer.toString('utf-8');
+      } catch (error) {
+        // If conversion fails, return base64 for client-side handling
+        content = `File upload: ${req.file.originalname} (${req.file.size} bytes)`;
+        return res.status(200).json({ 
+          fileName: req.file.originalname,
+          fileSize: req.file.size,
+          content: content
+        });
+      }
+      
+      // Return the content
+      res.status(200).json({ 
+        fileName: req.file.originalname,
+        fileSize: req.file.size,
+        content: content
+      });
+    } catch (error) {
+      console.error("File upload error:", error);
+      res.status(500).json({ message: "Failed to process uploaded file" });
     }
   });
 
@@ -337,8 +394,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Validate API key middleware
-  const validateApiKey = async (req: any, res: any, next: any) => {
-    const apiKey = req.headers['x-api-key'];
+  const validateApiKey = async (req: Request, res: Response, next: NextFunction) => {
+    const apiKey = req.headers['x-api-key'] as string;
     
     if (!apiKey) {
       return res.status(401).json({ message: "API key is required" });

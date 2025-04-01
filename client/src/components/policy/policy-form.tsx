@@ -83,7 +83,7 @@ export default function PolicyForm({
         },
   });
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     
@@ -98,71 +98,46 @@ export default function PolicyForm({
       return;
     }
     
-    setUploadedFileName(file.name);
+    // Set uploading state
+    setUploadedFileName(`${file.name} (uploading...)`);
     
-    // Different handling based on file type
-    const fileType = file.type.toLowerCase();
-    
-    // For text files, read directly
-    if (fileType === 'text/plain' || file.name.endsWith('.txt')) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        if (event.target?.result) {
-          form.setValue('content', event.target.result as string);
-          toast({
-            title: "File uploaded",
-            description: `${file.name} content has been extracted.`,
-          });
-        }
-      };
-      reader.onerror = () => {
-        toast({
-          title: "File read error",
-          description: `Could not read the file. Please try again or enter content manually.`,
-          variant: "destructive"
-        });
-      };
-      reader.readAsText(file);
-    } 
-    // For other file types (.pdf, .docx, etc.), we'll extract content using 
-    // base64 encoding which works better for binary files
-    else {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        if (event.target?.result) {
-          // For binary files, we extract as much text as possible
-          // For PDFs and Word docs, in a real implementation you'd use 
-          // a document parsing service or library
-          let content = "";
-          
-          // Add file metadata at minimum
-          content = `File: ${file.name}\nSize: ${(file.size / 1024).toFixed(2)} KB\nType: ${file.type}\n\n`;
-          
-          try {
-            // Try to extract text if possible
-            // For binary files, this might produce partial results
-            const base64Content = event.target.result as string;
-            const cleanContent = base64Content.replace(/[^\x20-\x7E]/g, '');
-            content += cleanContent.slice(0, 1000000); // Limit content length to avoid overflow
-          } catch (err) {
-            content += "Binary file content - please extract text manually if needed.";
-          }
-          
-          form.setValue('content', content);
-          toast({
-            title: "File uploaded",
-            description: `${file.name} has been processed. You may need to edit the content.`,
-          });
-        }
-      };
-      reader.onerror = () => {
-        toast({
-          title: "File read error",
-          description: `Could not process the file. Please try again or enter content manually.`,
-          variant: "destructive"
-        });
-      };
-      reader.readAsDataURL(file);
+    try {
+      // Create a FormData object for multipart/form-data upload
+      const formData = new FormData();
+      formData.append('file', file);
+      
+      // Upload file using the dedicated endpoint
+      const response = await fetch('/api/upload-policy-file', {
+        method: 'POST',
+        body: formData,
+        credentials: 'include', // Important for auth cookies
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Upload failed: ${response.status} ${response.statusText}`);
+      }
+      
+      const result = await response.json();
+      
+      // Set the file name
+      setUploadedFileName(result.fileName);
+      
+      // Set the content in the form
+      form.setValue('content', result.content);
+      
+      toast({
+        title: "File uploaded successfully",
+        description: `${result.fileName} (${(result.fileSize / 1024).toFixed(2)} KB) has been processed.`,
+      });
+    } catch (error) {
+      console.error("File upload error:", error);
+      setUploadedFileName(null);
+      
+      toast({
+        title: "File upload failed",
+        description: error instanceof Error ? error.message : "Unknown error occurred",
+        variant: "destructive"
+      });
     }
   };
 
