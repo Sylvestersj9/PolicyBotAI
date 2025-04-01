@@ -41,6 +41,18 @@ export async function searchPoliciesWithAI(query: string, policies: Policy[]): P
       };
     }
     
+    // Try keyword-based search first (always works as a fallback)
+    const keywordResult = performKeywordSearch(query, validPolicies);
+    
+    // If we found a good match with keywords, return it right away
+    if (keywordResult.policyId && keywordResult.confidence > 0.7) {
+      console.log("Using keyword search results (high confidence)");
+      return keywordResult;
+    }
+    
+    // Otherwise, try the AI models
+    console.log("Keyword search yielded low confidence, attempting AI search...");
+    
     // Create a more structured context from all policies, limiting to manageable chunks
     // and ensuring content is properly formatted
     const context = validPolicies.map(p => {
@@ -105,7 +117,8 @@ Format your response as JSON:
         console.log("Fallback model response received successfully");
       } catch (fallbackError) {
         console.error("Error with fallback model:", fallbackError);
-        throw new Error(`Both primary and fallback models failed. Primary error: ${modelError}. Fallback error: ${fallbackError}`);
+        console.log("All AI models failed, using keyword search results as fallback");
+        return keywordResult;
       }
     }
 
@@ -120,17 +133,15 @@ Format your response as JSON:
       }
     } catch (error) {
       console.error("Failed to parse JSON from AI response:", response.generated_text);
-      // Fallback to a simpler approach if JSON parsing fails
-      return {
-        answer: response.generated_text || "I found information that may be helpful, but couldn't format it properly.",
-        confidence: 0.5
-      };
+      // Fallback to keyword search if we can't parse the AI response
+      console.log("Failed to parse AI response, using keyword search results as fallback");
+      return keywordResult;
     }
 
     // Find the policy details if a policyId was returned
     let policyTitle = undefined;
     if (result.policyId) {
-      const policy = policies.find(p => p.id === result.policyId);
+      const policy = validPolicies.find(p => p.id === result.policyId);
       if (policy) {
         policyTitle = policy.title;
       }
@@ -144,33 +155,169 @@ Format your response as JSON:
     };
 
   } catch (error: any) {
-    console.error("Error querying Hugging Face AI:", error);
+    console.error("Error in search process:", error);
     
-    // Determine the type of error
-    let errorType = "unknown_error";
-    let errorMessage = "Sorry, I encountered an error while searching the policies. Please try again later.";
+    // Always fall back to keyword search when AI fails
+    console.log("Falling back to keyword search due to error");
+    return performKeywordSearch(query, policies.filter(p => p.content && p.content.trim() !== ''));
+  }
+}
+
+// Reliable keyword-based search as a fallback when AI is not available
+function performKeywordSearch(query: string, policies: Policy[]): {
+  answer: string;
+  policyId?: number;
+  policyTitle?: string;
+  confidence: number;
+} {
+  console.log("Performing keyword-based policy search");
+  
+  if (!policies || policies.length === 0) {
+    return {
+      answer: "No policies available to search.",
+      confidence: 1.0
+    };
+  }
+  
+  // Prepare the search query by normalizing and extracting keywords
+  const searchTerms = query
+    .toLowerCase()
+    .replace(/[^\w\s]/g, '') // Remove punctuation
+    .split(/\s+/)
+    .filter(word => word.length > 2) // Ignore short words
+    .filter(word => !['the', 'and', 'for', 'with', 'that', 'what', 'when', 'where', 'why', 'how'].includes(word)); // Remove common stop words
+
+  if (searchTerms.length === 0) {
+    return {
+      answer: "Please provide a more specific search query with keywords related to the policy you're looking for.",
+      confidence: 1.0
+    };
+  }
+  
+  console.log("Search terms:", searchTerms);
+  
+  // Score each policy based on the presence of search terms
+  const policyScores = policies.map(policy => {
+    const normalizedContent = (policy.content || '').toLowerCase();
+    const normalizedTitle = (policy.title || '').toLowerCase();
     
-    if (error.name === "TypeError" && error.message.includes("fetch")) {
-      errorType = "network_error";
-      errorMessage = "Unable to connect to the AI service. Please check your internet connection and try again.";
-    } else if (error.status === 429 || (error.message && error.message.includes("rate"))) {
-      errorType = "rate_limit";
-      errorMessage = "The AI service rate limit has been exceeded. Please try again later.";
-    } else if (error.status === 401 || error.status === 403 || 
-              (error.message && (error.message.includes("auth") || error.message.includes("key")))) {
-      errorType = "auth_error";
-      errorMessage = "There was an authentication issue with the AI service. Please contact your administrator.";
-    } else if (error.message && error.message.includes("model")) {
-      errorType = "model_error";
-      errorMessage = "There was a problem with the selected AI model. Please contact your administrator.";
+    // Calculate how many of the search terms appear in the content
+    let termMatches = 0;
+    let exactPhraseBonus = 0;
+    let titleMatches = 0;
+    
+    // Check for the whole query as an exact phrase
+    if (normalizedContent.includes(query.toLowerCase())) {
+      exactPhraseBonus = 5; // Big bonus for exact phrase match
+    }
+    
+    // Count term matches in content
+    searchTerms.forEach(term => {
+      if (normalizedContent.includes(term)) {
+        termMatches++;
+      }
+      
+      // Extra points for terms in the title
+      if (normalizedTitle.includes(term)) {
+        titleMatches++;
+      }
+    });
+    
+    // Calculate a score based on matches
+    const matchRatio = termMatches / searchTerms.length;
+    const titleBonus = titleMatches * 0.5; // Bonus points for title matches
+    
+    // Final score formula
+    const score = matchRatio + titleBonus + exactPhraseBonus;
+    
+    // Find the best matching paragraph if we have any matches
+    let bestParagraph = "";
+    let bestParagraphScore = 0;
+    
+    if (termMatches > 0) {
+      // Split content into paragraphs and find the one with most matches
+      const paragraphs = normalizedContent.split(/\n+/);
+      
+      paragraphs.forEach(paragraph => {
+        if (paragraph.trim().length < 10) return; // Skip very short paragraphs
+        
+        let paragraphScore = 0;
+        searchTerms.forEach(term => {
+          if (paragraph.includes(term)) {
+            paragraphScore++;
+          }
+        });
+        
+        // Check for exact phrase in paragraph (big bonus)
+        if (paragraph.includes(query.toLowerCase())) {
+          paragraphScore += 3;
+        }
+        
+        if (paragraphScore > bestParagraphScore) {
+          bestParagraphScore = paragraphScore;
+          bestParagraph = paragraph;
+        }
+      });
     }
     
     return {
-      answer: errorMessage,
-      confidence: 0,
-      error: errorType
+      policy,
+      score,
+      bestParagraph,
+      matchRatio,
+      titleMatches,
+      termMatches,
+    };
+  });
+  
+  // Sort by score (descending)
+  policyScores.sort((a, b) => b.score - a.score);
+  
+  // Get the best match
+  const bestMatch = policyScores[0];
+  
+  if (bestMatch.score < 0.2) {
+    return {
+      answer: `No policy directly addresses '${query}'. Try a different search query.`,
+      confidence: 0.3
     };
   }
+  
+  // Calculate confidence based on the score
+  // Map the score to a confidence between 0.5 and 0.95
+  const confidence = Math.min(0.95, Math.max(0.5, bestMatch.score / 5));
+  
+  // Find a relevant excerpt from the content
+  let excerpt = bestMatch.bestParagraph;
+  
+  // If no good paragraph was found, but we had term matches, create a simple excerpt
+  if (!excerpt && bestMatch.termMatches > 0) {
+    const normalizedContent = (bestMatch.policy.content || '').toLowerCase();
+    const firstTerm = searchTerms.find(term => normalizedContent.includes(term)) || '';
+    
+    if (firstTerm) {
+      const termIndex = normalizedContent.indexOf(firstTerm);
+      const startIndex = Math.max(0, termIndex - 50);
+      const endIndex = Math.min(normalizedContent.length, termIndex + 100);
+      excerpt = normalizedContent.substring(startIndex, endIndex) + '...';
+    }
+  }
+  
+  // Format the answer
+  let answer: string;
+  
+  if (excerpt) {
+    answer = `According to ${bestMatch.policy.title} (Policy #${bestMatch.policy.id}), "${excerpt.trim()}"`;
+  } else {
+    answer = `${bestMatch.policy.title} (Policy #${bestMatch.policy.id}) may be relevant to your query, but no specific section directly addresses "${query}".`;
+  }
+  
+  return {
+    answer,
+    policyId: bestMatch.policy.id,
+    policyTitle: bestMatch.policy.title,
+    confidence
+  };
 }
 
 /**
@@ -183,6 +330,9 @@ export async function analyzePolicyContent(policyContent: string): Promise<{
   keyPoints: string[];
 }> {
   try {
+    // Try algorithmic analysis first as a reliable fallback
+    const backupAnalysis = generateBasicAnalysis(policyContent);
+    
     // Simplified prompt format for flan-t5-xl and gpt2 models
     const prompt = `Analyze this policy document and provide:
 1. A concise summary (maximum 3 sentences)
@@ -225,7 +375,8 @@ Format your response as JSON with fields "summary" and "keyPoints" (array of str
         console.log("Fallback model analysis response received successfully");
       } catch (fallbackError) {
         console.error("Error with fallback model for analysis:", fallbackError);
-        throw new Error(`Both primary and fallback models failed for analysis. Primary error: ${modelError}. Fallback error: ${fallbackError}`);
+        console.log("All AI models failed, using algorithmic analysis as fallback");
+        return backupAnalysis;
       }
     }
 
@@ -240,11 +391,9 @@ Format your response as JSON with fields "summary" and "keyPoints" (array of str
       }
     } catch (error) {
       console.error("Failed to parse JSON from AI response:", response.generated_text);
-      // Fallback response
-      return {
-        summary: "Analysis failed to generate a proper summary.",
-        keyPoints: ["The analysis could not extract key points from the document."]
-      };
+      // Fallback to algorithmic analysis
+      console.log("Failed to parse AI response, using algorithmic analysis as fallback");
+      return backupAnalysis;
     }
 
     return {
@@ -254,23 +403,118 @@ Format your response as JSON with fields "summary" and "keyPoints" (array of str
   } catch (error: any) {
     console.error("Error analyzing policy content:", error);
     
-    // Determine the type of error for better error messaging
-    let errorMessage = "Error analyzing the policy content.";
-    
-    if (error.name === "TypeError" && error.message.includes("fetch")) {
-      errorMessage = "Unable to connect to the AI service. Please check your internet connection.";
-    } else if (error.status === 429 || (error.message && error.message.includes("rate"))) {
-      errorMessage = "The AI service rate limit has been exceeded. Please try again later.";
-    } else if (error.status === 401 || error.status === 403 || 
-              (error.message && (error.message.includes("auth") || error.message.includes("key")))) {
-      errorMessage = "There was an authentication issue with the AI service.";
-    } else if (error.message && error.message.includes("model")) {
-      errorMessage = "There was a problem with the selected AI model.";
-    }
-    
+    // Always fall back to algorithmic analysis when AI fails
+    console.log("Falling back to algorithmic analysis due to error");
+    return generateBasicAnalysis(policyContent);
+  }
+}
+
+// Basic algorithmic document analysis for fallback when AI is unavailable
+function generateBasicAnalysis(policyContent: string): {
+  summary: string;
+  keyPoints: string[];
+} {
+  if (!policyContent || policyContent.trim() === '') {
     return {
-      summary: errorMessage,
-      keyPoints: ["Analysis failed due to an error.", "Please try again later or contact support."]
+      summary: "No content provided for analysis.",
+      keyPoints: ["Empty document detected", "Please provide content to analyze"]
     };
   }
+  
+  const content = policyContent.trim();
+  
+  // Get first paragraph as the intro summary
+  const paragraphs = content.split(/\n+/).filter(p => p.trim().length > 10);
+  let summary = "";
+  
+  if (paragraphs.length > 0) {
+    // Use first paragraph but limit length
+    summary = paragraphs[0].length > 200 
+      ? paragraphs[0].substring(0, 200) + "..." 
+      : paragraphs[0];
+  } else {
+    // If no paragraphs, use first 200 chars
+    summary = content.length > 200 
+      ? content.substring(0, 200) + "..." 
+      : content;
+  }
+  
+  // Find key points by looking for:
+  // 1. Paragraphs with important keywords
+  // 2. Lists or bullet points
+  // 3. Sections with numbers or headers
+  
+  const keywordList = [
+    'must', 'required', 'prohibited', 'important', 'never', 'always',
+    'policy', 'procedure', 'regulation', 'rule', 'law', 'mandatory',
+    'compliance', 'consequences', 'violation', 'penalty', 'fine', 'legal',
+    'deadline', 'critical', 'safety', 'security', 'privacy', 'confidential',
+    'liability', 'responsible', 'requirement', 'obligated', 'obligation'
+  ];
+  
+  // Score paragraphs based on keywords and format cues
+  const scoredParagraphs = paragraphs.map(p => {
+    const lowerP = p.toLowerCase();
+    let score = 0;
+    
+    // Check for keywords
+    keywordList.forEach(keyword => {
+      if (lowerP.includes(keyword)) {
+        score += 1;
+      }
+    });
+    
+    // Boost score for formatting cues
+    if (p.includes('•') || p.includes('*') || /^\s*[\d#\-•]+\s+/.test(p)) {
+      score += 3; // Likely a bullet point
+    }
+    
+    if (/^\s*\d+[\.)]\s+/.test(p)) {
+      score += 2; // Numbered item
+    }
+    
+    if (/^[A-Z][A-Z\s]+:/.test(p)) {
+      score += 2; // ALL CAPS header
+    }
+    
+    return { text: p, score };
+  });
+  
+  // Sort by score and take top 5
+  scoredParagraphs.sort((a, b) => b.score - a.score);
+  const topPoints = scoredParagraphs.slice(0, 5);
+  
+  // Format key points
+  const keyPoints = topPoints.map(item => {
+    let point = item.text;
+    // Truncate if too long
+    if (point.length > 120) {
+      point = point.substring(0, 120) + "...";
+    }
+    return point;
+  });
+  
+  // If we couldn't find good key points, create generic ones
+  if (keyPoints.length === 0) {
+    const contentChunks = content.split(/\s+/);
+    const chunkSize = Math.max(10, Math.floor(contentChunks.length / 5));
+    
+    // Create points from document chunks
+    for (let i = 0; i < Math.min(5, contentChunks.length / chunkSize); i++) {
+      const startIdx = i * chunkSize;
+      const chunk = contentChunks.slice(startIdx, startIdx + chunkSize).join(' ');
+      keyPoints.push(chunk);
+    }
+  }
+  
+  // If still no key points, use a default message
+  if (keyPoints.length === 0) {
+    keyPoints.push("No clear key points identified in document.");
+    keyPoints.push("Please review the full document for details.");
+  }
+  
+  return {
+    summary: summary.trim() || "Document analysis completed. No clear summary could be generated.",
+    keyPoints: keyPoints.length > 0 ? keyPoints : ["No key points identified in the document."]
+  };
 }
