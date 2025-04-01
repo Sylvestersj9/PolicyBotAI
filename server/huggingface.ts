@@ -5,11 +5,10 @@ import { Policy } from '@shared/schema';
 // Using API key allows access to more powerful models and higher rate limits
 const hf = new HfInference(process.env.HUGGINGFACE_API_KEY);
 
-// Fallback to a text-generation model if primary model is not available
-// or if there are authentication issues
-// Using a publicly available model that doesn't require special permissions
-const DEFAULT_MODEL = 'mistralai/Mistral-7B-Instruct-v0.2';
-const FALLBACK_MODEL = 'google/flan-t5-xl';
+// Using more widely accessible models that work well with the provided API key
+// Changed from Mistral to a more accessible model
+const DEFAULT_MODEL = 'google/flan-t5-xl';
+const FALLBACK_MODEL = 'gpt2';
 
 /**
  * Search through policies using Hugging Face's AI to find the most relevant information
@@ -57,30 +56,22 @@ export async function searchPoliciesWithAI(query: string, policies: Policy[]): P
       return `POLICY #${p.id} - ${p.title}:\n${cleanContent}\n\n`;
     }).join('');
 
-    // Format the prompt for instruction-tuned models with improved instructions
-    const prompt = `<s>[INST] You are an advanced policy search system that helps users find information in company policies.
+    // Simplified prompt format for flan-t5-xl and gpt2 models
+    const prompt = `You are a policy search system. Find information in these company policies:
 
-Context information from company policies (read this carefully):
 ${context}
 
 User question: ${query}
 
 Instructions:
-1. Carefully analyze the policies to find the most relevant information for the question.
-2. Use EXACT information from the policies - do not make up or invent policy details.
-3. If there's a relevant policy, provide the policy ID and a direct answer quoting from that policy.
-4. If multiple policies are relevant, use the one with the most specific information.
-5. If no policy contains relevant information, clearly state that no relevant policy was found.
-6. Provide a confidence score between 0 and 1 indicating how confident you are in your answer.
+1. Find the most relevant information from the policies for this question.
+2. Use exact quotes from the policies - don't make things up.
+3. Provide the policy ID and quote the relevant section.
+4. If no policy has relevant information, clearly state that.
+5. Give a confidence score from 0 to 1.
 
-Format your response as JSON with these fields:
-- policyId (number or null if no relevant policy)
-- answer (string containing your response with relevant quotes from the policy)
-- confidence (number between 0 and 1)
-
-Example response format:
-{"policyId": 2, "answer": "According to Policy #2, 'Employees must report all incidents within 24 hours.' This directly addresses your question about incident reporting timeframes.", "confidence": 0.92}
-[/INST]</s>`;
+Format your response as JSON:
+{"policyId": 2, "answer": "According to Policy #2, employees must report incidents within 24 hours", "confidence": 0.9}`;
 
     // Call the model with enhanced error handling and fallback
     let response;
@@ -192,14 +183,15 @@ export async function analyzePolicyContent(policyContent: string): Promise<{
   keyPoints: string[];
 }> {
   try {
-    const prompt = `<s>[INST] Analyze this policy document and provide:
+    // Simplified prompt format for flan-t5-xl and gpt2 models
+    const prompt = `Analyze this policy document and provide:
 1. A concise summary (maximum 3 sentences)
 2. 3-5 key points from the document
-Format the response as JSON with fields "summary" and "keyPoints" (array of strings).
 
 Policy document:
 ${policyContent}
-[/INST]</s>`;
+
+Format your response as JSON with fields "summary" and "keyPoints" (array of strings).`;
 
     // Call the model with enhanced error handling and fallback
     let response;
