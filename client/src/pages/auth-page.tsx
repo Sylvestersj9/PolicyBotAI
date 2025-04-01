@@ -79,7 +79,7 @@ export default function AuthPage() {
               <FileText className="h-6 w-6 text-white" />
             </div>
             <div>
-              <span className="font-bold text-3xl bg-gradient-to-r from-primary to-primary/80 text-transparent bg-clip-text">PolicyHub</span>
+              <span className="font-bold text-3xl bg-gradient-to-r from-primary to-primary/80 text-transparent bg-clip-text">Pro Policy AI</span>
               <div className="text-xs text-neutral-500">Intelligent Policy Management</div>
             </div>
           </div>
@@ -106,7 +106,7 @@ export default function AuthPage() {
                     Login to your account
                   </CardTitle>
                   <CardDescription>
-                    Enter your credentials to access the PolicyHub platform
+                    Enter your credentials to access the Pro Policy AI platform
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -202,7 +202,7 @@ export default function AuthPage() {
                     Create an account
                   </CardTitle>
                   <CardDescription>
-                    Join PolicyHub to start managing your company documents
+                    Join Pro Policy AI to start managing your company documents
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -409,10 +409,10 @@ export default function AuthPage() {
             <div className="h-12 w-12 rounded-lg bg-white bg-opacity-20 backdrop-blur-sm shadow-lg flex items-center justify-center mr-4">
               <FileText className="h-6 w-6 text-white" />
             </div>
-            <h2 className="text-2xl font-bold">PolicyHub</h2>
+            <h2 className="text-2xl font-bold text-white">Pro Policy AI</h2>
           </div>
           
-          <h1 className="text-4xl font-bold mb-6 leading-tight">
+          <h1 className="text-4xl font-bold mb-6 leading-tight text-white">
             Smarter Policy <br />Management for<br />Modern Teams
           </h1>
           
@@ -421,7 +421,7 @@ export default function AuthPage() {
           </p>
           
           <div className="space-y-6 backdrop-blur-sm bg-white/10 p-6 rounded-lg">
-            <div className="text-xl font-medium mb-4 flex items-center">
+            <div className="text-xl font-medium mb-4 flex items-center text-white">
               <ShieldCheck className="mr-2 h-6 w-6 text-white" />
               Key Features
             </div>
@@ -432,7 +432,7 @@ export default function AuthPage() {
                   <FileText className="h-4 w-4 text-white" />
                 </div>
                 <div>
-                  <span className="font-medium">Centralized Repository</span>
+                  <span className="font-medium text-white">Centralized Repository</span>
                   <p className="text-sm text-white/80 mt-1">Store all company policies in one secure, searchable location</p>
                 </div>
               </div>
@@ -442,7 +442,7 @@ export default function AuthPage() {
                   <Search className="h-4 w-4 text-white" />
                 </div>
                 <div>
-                  <span className="font-medium">AI-Powered Search</span>
+                  <span className="font-medium text-white">AI-Powered Search</span>
                   <p className="text-sm text-white/80 mt-1">Find the right policy content instantly with advanced AI search</p>
                 </div>
               </div>
@@ -452,7 +452,7 @@ export default function AuthPage() {
                   <Eye className="h-4 w-4 text-white" />
                 </div>
                 <div>
-                  <span className="font-medium">Usage Analytics</span>
+                  <span className="font-medium text-white">Usage Analytics</span>
                   <p className="text-sm text-white/80 mt-1">Track policy engagement and compliance across your organization</p>
                 </div>
               </div>
