@@ -142,11 +142,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/upload-file-disk", requireAuth, uploadSingleFile('file'), (req, res) => {
     try {
       processUploadedFile(req, res);
-    } catch (error) {
+    } catch (error: any) {
       console.error("File upload error:", error);
       res.status(500).json({ 
         message: "Failed to process uploaded file",
-        error: error.message
+        error: error.message || "Unknown error"
       });
     }
   });
@@ -379,9 +379,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
       
       // Sort searches with most recent first
-      formattedSearches.sort((a, b) => 
-        new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-      );
+      formattedSearches.sort((a, b) => {
+        // Ensure timestamp exists before converting to Date
+        const timeA = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+        const timeB = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+        return timeB - timeA;
+      });
       
       res.json(formattedSearches);
     } catch (error) {

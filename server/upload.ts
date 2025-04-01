@@ -62,22 +62,50 @@ export const uploadSingleFile = (fieldName: string) => {
   return (req: Request, res: Response, next: NextFunction) => {
     console.log(`Starting file upload for field: ${fieldName}`);
     
-    const uploadMiddleware = upload.single(fieldName);
-    
-    uploadMiddleware(req, res, (err) => {
-      if (err) {
-        console.error('Upload middleware error:', err);
-        return handleMulterErrors(err, req, res, next);
+    try {
+      // Check if upload directory exists and create it if it doesn't
+      if (!fs.existsSync(uploadDir)) {
+        console.log(`Creating upload directory: ${uploadDir}`);
+        fs.mkdirSync(uploadDir, { recursive: true });
       }
       
-      if (!req.file) {
-        console.log('No file was uploaded');
-        return res.status(400).json({ message: 'No file was uploaded' });
+      // Check if directory is writable
+      try {
+        const testPath = path.join(uploadDir, '.test-write-access');
+        fs.writeFileSync(testPath, 'test');
+        fs.unlinkSync(testPath);
+        console.log('Upload directory has write access');
+      } catch (error) {
+        console.error('Upload directory is not writable:', error);
+        return res.status(500).json({ 
+          message: 'Server configuration error: upload directory is not writable',
+          error: 'UPLOAD_DIR_NOT_WRITABLE'
+        });
       }
       
-      console.log(`File uploaded successfully: ${req.file.filename}`);
-      next();
-    });
+      const uploadMiddleware = upload.single(fieldName);
+      
+      uploadMiddleware(req, res, (err) => {
+        if (err) {
+          console.error('Upload middleware error:', err);
+          return handleMulterErrors(err, req, res, next);
+        }
+        
+        if (!req.file) {
+          console.log('No file was uploaded');
+          return res.status(400).json({ message: 'No file was uploaded' });
+        }
+        
+        console.log(`File uploaded successfully: ${req.file.filename}`);
+        next();
+      });
+    } catch (error: any) {
+      console.error('Unexpected error in upload middleware:', error);
+      return res.status(500).json({ 
+        message: 'An unexpected error occurred during file upload',
+        error: error.message || 'UNKNOWN_ERROR'
+      });
+    }
   };
 };
 

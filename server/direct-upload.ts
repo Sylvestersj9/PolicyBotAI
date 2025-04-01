@@ -7,15 +7,27 @@ import * as crypto from 'crypto';
 const writeFilePromise = util.promisify(fs.writeFile);
 const mkdirPromise = util.promisify(fs.mkdir);
 
-// Ensure uploads directory exists
+// Ensure uploads directory exists and is writable
 const ensureUploadDir = async () => {
   const uploadDir = path.join(process.cwd(), 'public', 'uploads');
+  
   try {
-    await mkdirPromise(uploadDir, { recursive: true });
+    // Create directory if it doesn't exist
+    if (!fs.existsSync(uploadDir)) {
+      console.log(`Creating upload directory: ${uploadDir}`);
+      await mkdirPromise(uploadDir, { recursive: true });
+    }
+    
+    // Test write permissions by creating and deleting a test file
+    const testPath = path.join(uploadDir, '.test-write-access');
+    await writeFilePromise(testPath, 'test');
+    fs.unlinkSync(testPath);
+    console.log('Upload directory has write access');
+    
     return uploadDir;
-  } catch (error) {
-    console.error('Error creating upload directory:', error);
-    throw error;
+  } catch (error: any) {
+    console.error('Error with upload directory:', error);
+    throw new Error(`Upload directory issue: ${error.message || 'unknown error'}`);
   }
 };
 
@@ -74,11 +86,11 @@ export async function uploadBase64File(req: Request, res: Response) {
       size: buffer.length,
       url: `/uploads/${safeFileName}`
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error in direct upload:', error);
     return res.status(500).json({ 
       message: 'Failed to upload file',
-      error: error.message 
+      error: error.message || 'Unknown error'
     });
   }
 }
