@@ -311,16 +311,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const searches = await storage.getSearchQueries(req.user.id);
       
-      // Parse the stored JSON result for each search
-      const formattedSearches = searches.map(search => ({
-        id: search.id,
-        query: search.query,
-        result: JSON.parse(search.result),
-        timestamp: search.timestamp
-      }));
+      // Parse the stored JSON result for each search with error handling
+      const formattedSearches = searches.map(search => {
+        let result;
+        try {
+          result = JSON.parse(search.result);
+        } catch (parseError) {
+          console.error(`Error parsing search result for ID ${search.id}:`, parseError);
+          result = {
+            answer: "Error retrieving search result data",
+            confidence: 0
+          };
+        }
+        
+        return {
+          id: search.id,
+          query: search.query,
+          result,
+          timestamp: search.timestamp
+        };
+      });
+      
+      // Sort searches with most recent first
+      formattedSearches.sort((a, b) => 
+        new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+      );
       
       res.json(formattedSearches);
     } catch (error) {
+      console.error("Error fetching searches:", error);
       res.status(500).json({ message: "Failed to get search history" });
     }
   });

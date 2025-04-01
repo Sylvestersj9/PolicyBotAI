@@ -34,20 +34,34 @@ export default function AISearchPage() {
   // AI search mutation
   const searchMutation = useMutation({
     mutationFn: async (query: string) => {
-      const res = await apiRequest("POST", "/api/search", { query });
-      return await res.json();
+      try {
+        const res = await apiRequest("POST", "/api/search", { query });
+        if (!res.ok) {
+          const errorData = await res.json();
+          throw new Error(errorData.message || "Failed to perform search");
+        }
+        return await res.json();
+      } catch (error) {
+        console.error("Search mutation error:", error);
+        throw error;
+      }
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/searches"] });
-      toast({
-        title: "Search completed",
-        description: "Found relevant information in your policies.",
-      });
+      
+      // Only show success toast if we got a meaningful answer
+      if (data?.result?.answer && !data.result.answer.includes("Error parsing AI response")) {
+        toast({
+          title: "Search completed",
+          description: "Found relevant information in your policies.",
+        });
+      }
     },
-    onError: (error) => {
+    onError: (error: any) => {
+      console.error("Search error in component:", error);
       toast({
         title: "Search failed",
-        description: error.message,
+        description: error.message || "An unexpected error occurred",
         variant: "destructive",
       });
     },

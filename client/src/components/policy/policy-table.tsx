@@ -100,16 +100,16 @@ export default function PolicyTable({
   };
 
   return (
-    <div className="bg-white rounded-lg shadow-sm border border-neutral-200 overflow-hidden">
+    <div className="bg-white rounded-lg shadow-md border border-neutral-200 overflow-hidden interactive-card gradient-border">
       <div className="px-6 py-4 border-b border-neutral-200 flex items-center justify-between">
         <h2 className="font-semibold">Policies</h2>
         <Button 
           variant="default" 
           size="sm"
-          className="text-white hover:text-white border border-primary rounded font-medium flex items-center"
+          className="text-white hover:text-white border border-primary rounded-md font-medium flex items-center btn-animated pulse-on-hover bg-gradient-to-r from-primary to-primary/90"
           onClick={onAddNew}
         >
-          <Plus className="h-4 w-4 mr-1" /> New Policy
+          <Plus className="h-4 w-4 mr-1 animate-pulse" /> New Policy
         </Button>
       </div>
       
@@ -168,7 +168,7 @@ export default function PolicyTable({
               currentPolicies.map((policy) => {
                 const category = getCategoryById(policy.categoryId);
                 return (
-                  <TableRow key={policy.id} className="hover:bg-neutral-50">
+                  <TableRow key={policy.id} className="hover:bg-neutral-50/80 transition-colors duration-200 cursor-pointer group">
                     <TableCell className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center">
                         <FileText className="h-5 w-5 text-neutral-400 mr-3" />
@@ -199,24 +199,27 @@ export default function PolicyTable({
                         <Button 
                           variant="ghost" 
                           size="icon"
-                          className="text-neutral-400 hover:text-primary"
+                          className="text-neutral-400 hover:text-primary opacity-70 hover:opacity-100 hover:bg-primary/10 group-hover:scale-110 transition-all duration-200"
                           onClick={() => onEdit(policy)}
+                          title="Edit Policy"
                         >
                           <Edit className="h-4 w-4" />
                         </Button>
                         <Button 
                           variant="ghost" 
                           size="icon"
-                          className="text-neutral-400 hover:text-success"
+                          className="text-neutral-400 hover:text-success opacity-70 hover:opacity-100 hover:bg-success/10 group-hover:scale-110 transition-all duration-200"
                           onClick={() => onView(policy)}
+                          title="View Policy"
                         >
                           <Eye className="h-4 w-4" />
                         </Button>
                         <Button 
                           variant="ghost" 
                           size="icon"
-                          className="text-neutral-400 hover:text-error"
+                          className="text-neutral-400 hover:text-error opacity-70 hover:opacity-100 hover:bg-error/10 group-hover:scale-110 transition-all duration-200"
                           onClick={() => handleDeleteClick(policy)}
+                          title="Delete Policy"
                         >
                           <Trash className="h-4 w-4" />
                         </Button>

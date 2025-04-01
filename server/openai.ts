@@ -74,14 +74,24 @@ ${policiesContext}`
 
     // Parse the response safely
     const messageContent = response.choices[0]?.message?.content ?? "{}";
-    const result = JSON.parse(messageContent);
+    console.log("OpenAI response content:", messageContent);
     
-    return {
-      answer: result.answer || "No specific answer found in the policies.",
-      policyId: result.policyId || undefined,
-      policyTitle: result.policyTitle || undefined,
-      confidence: typeof result.confidence === 'number' ? result.confidence : 0
-    };
+    try {
+      const result = JSON.parse(messageContent);
+      
+      return {
+        answer: result.answer || "No specific answer found in the policies.",
+        policyId: result.policyId || undefined,
+        policyTitle: result.policyTitle || undefined,
+        confidence: typeof result.confidence === 'number' ? result.confidence : 0
+      };
+    } catch (parseError) {
+      console.error("Failed to parse OpenAI response:", parseError);
+      return {
+        answer: "Error parsing AI response. Raw response: " + messageContent.substring(0, 200),
+        confidence: 0
+      };
+    }
   } catch (error) {
     console.error("OpenAI search error:", error);
     
@@ -125,12 +135,22 @@ Respond in JSON format with "summary" and "keyPoints" fields.`
 
     // Parse the response safely
     const messageContent = response.choices[0]?.message?.content ?? "{}";
-    const result = JSON.parse(messageContent);
+    console.log("OpenAI policy analysis response content:", messageContent);
     
-    return {
-      summary: result.summary || "No summary available.",
-      keyPoints: Array.isArray(result.keyPoints) ? result.keyPoints : []
-    };
+    try {
+      const result = JSON.parse(messageContent);
+      
+      return {
+        summary: result.summary || "No summary available.",
+        keyPoints: Array.isArray(result.keyPoints) ? result.keyPoints : []
+      };
+    } catch (parseError) {
+      console.error("Failed to parse OpenAI policy analysis response:", parseError);
+      return {
+        summary: "Error parsing AI response for policy analysis.",
+        keyPoints: []
+      };
+    }
   } catch (error) {
     console.error("OpenAI policy analysis error:", error);
     
