@@ -818,6 +818,65 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Failed to upload profile picture" });
     }
   });
+  
+  // Delete profile picture
+  app.delete("/api/user/profile-picture", requireAuth, async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      // Get the current user
+      const user = await storage.getUser(req.user.id);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      // Check if user has a profile picture
+      if (!user.profilePicture) {
+        return res.status(400).json({ message: "No profile picture to delete" });
+      }
+      
+      // Get the absolute path of the profile picture file
+      const filePath = path.join(process.cwd(), 'public', user.profilePicture.replace(/^\/uploads\//, 'uploads/'));
+      
+      // Try to delete the file from the filesystem if it exists
+      try {
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+          console.log(`Successfully deleted profile picture file: ${filePath}`);
+        } else {
+          console.log(`Profile picture file not found: ${filePath}`);
+        }
+      } catch (fsError) {
+        // Log but don't stop the process if file deletion fails
+        console.error("Error deleting profile picture file:", fsError);
+      }
+      
+      // Update the user record to remove the profile picture reference
+      const updatedUser = await storage.updateUserProfilePicture(req.user.id, null);
+      
+      if (!updatedUser) {
+        return res.status(500).json({ message: "Failed to update user record" });
+      }
+      
+      // Log activity
+      await storage.createActivity({
+        userId: req.user.id,
+        action: "deleted",
+        resourceType: "user",
+        resourceId: req.user.id,
+        details: "Removed profile picture"
+      });
+      
+      res.json({ 
+        message: "Profile picture removed successfully" 
+      });
+    } catch (error) {
+      console.error("Error removing profile picture:", error);
+      res.status(500).json({ message: "Failed to remove profile picture" });
+    }
+  });
 
   // AI Training endpoints
   

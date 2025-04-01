@@ -2,8 +2,10 @@ import { useState } from "react";
 import { 
   Bell, 
   Search as SearchIcon,
-  ChevronDown
+  ChevronDown,
+  Menu
 } from "lucide-react";
+import { useSidebar } from "@/hooks/use-sidebar";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -22,6 +24,7 @@ interface HeaderProps {
 
 export default function Header({ title, onSearchPolicies }: HeaderProps) {
   const [searchQuery, setSearchQuery] = useState("");
+  const { toggleSidebar } = useSidebar();
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -31,8 +34,17 @@ export default function Header({ title, onSearchPolicies }: HeaderProps) {
   };
 
   return (
-    <header className="h-16 border-b border-neutral-200 bg-white flex items-center px-6 justify-between">
-      <div>
+    <header className="h-16 border-b border-neutral-200 bg-white flex items-center px-4 md:px-6 justify-between">
+      <div className="flex items-center">
+        {/* Hamburger menu for mobile */}
+        <Button
+          variant="ghost"
+          size="icon"
+          className="mr-2"
+          onClick={toggleSidebar}
+        >
+          <Menu className="h-5 w-5" />
+        </Button>
         <h1 className="text-lg font-semibold">{title}</h1>
       </div>
       
@@ -57,7 +69,7 @@ export default function Header({ title, onSearchPolicies }: HeaderProps) {
         {/* Search */}
         {onSearchPolicies && (
           <form 
-            className="flex items-center border rounded-md px-3 py-1.5 bg-neutral-100"
+            className="hidden sm:flex items-center border rounded-md px-3 py-1.5 bg-neutral-100"
             onSubmit={handleSearch}
           >
             <SearchIcon className="h-4 w-4 text-neutral-500 mr-2" />

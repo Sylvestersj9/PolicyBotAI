@@ -1,20 +1,20 @@
-import { useState } from "react";
+import { useState, useRef, ChangeEvent } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, User, Key, Bell, Shield } from "lucide-react";
+import { Loader2, User, Key, Bell, Shield, Camera, X } from "lucide-react";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import Sidebar from "../components/ui/sidebar";
 
 // Profile form schema
@@ -31,6 +31,8 @@ export default function SettingsPage() {
   const { toast } = useToast();
   const [apiKey, setApiKey] = useState<string | null>(null);
   const [isGeneratingKey, setIsGeneratingKey] = useState(false);
+  const [isUploadingPicture, setIsUploadingPicture] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Get user initials for avatar
   const getInitials = (name: string) => {
@@ -39,6 +41,80 @@ export default function SettingsPage() {
       .map(part => part[0])
       .join('')
       .toUpperCase();
+  };
+  
+  // Handle profile picture upload
+  const handleProfilePictureChange = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    // Check file type
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+    if (!allowedTypes.includes(file.type)) {
+      toast({
+        variant: "destructive",
+        title: "Invalid file type",
+        description: "Please upload a JPG, PNG, GIF, or WebP image file.",
+      });
+      return;
+    }
+    
+    // Check file size (max 5MB)
+    const maxSize = 5 * 1024 * 1024; // 5MB in bytes
+    if (file.size > maxSize) {
+      toast({
+        variant: "destructive",
+        title: "File too large",
+        description: "Please upload an image smaller than 5MB.",
+      });
+      return;
+    }
+    
+    // Create form data for upload
+    const formData = new FormData();
+    formData.append('profilePicture', file);
+    
+    setIsUploadingPicture(true);
+    try {
+      const response = await fetch('/api/user/profile-picture', {
+        method: 'POST',
+        credentials: 'include',
+        body: formData,
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Failed to upload profile picture");
+      }
+      
+      const data = await response.json();
+      
+      // Update the cache to reflect the new profile picture
+      queryClient.setQueryData(["/api/user"], (oldData: any) => {
+        if (!oldData) return oldData;
+        return {
+          ...oldData,
+          profilePicture: data.profilePicture
+        };
+      });
+      
+      toast({
+        title: "Profile picture updated",
+        description: "Your profile picture has been updated successfully.",
+      });
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Upload failed",
+        description: error.message || "Failed to upload profile picture. Please try again.",
+      });
+    } finally {
+      setIsUploadingPicture(false);
+      // Reset the file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
   };
 
   // Initialize profile form with user data
@@ -124,15 +200,103 @@ export default function SettingsPage() {
                     <CardDescription>This is your public profile information.</CardDescription>
                   </CardHeader>
                   <CardContent className="flex flex-col items-center text-center">
-                    <Avatar className="h-24 w-24 mb-4">
-                      <AvatarFallback className="text-xl bg-primary text-white">
-                        {user.name ? getInitials(user.name) : "U"}
-                      </AvatarFallback>
-                    </Avatar>
+                    <div className="relative group">
+                      <Avatar className="h-24 w-24 mb-4">
+                        {user.profilePicture ? (
+                          <AvatarImage src={user.profilePicture} alt={user.name || "User"} />
+                        ) : null}
+                        <AvatarFallback className="text-xl bg-primary text-white">
+                          {user.name ? getInitials(user.name) : "U"}
+                        </AvatarFallback>
+                      </Avatar>
+                      
+                      {/* Hidden file input */}
+                      <input 
+                        type="file" 
+                        ref={fileInputRef}
+                        onChange={handleProfilePictureChange}
+                        className="hidden"
+                        accept="image/jpeg,image/png,image/gif,image/webp"
+                      />
+                      
+                      {/* Camera icon overlay for changing picture */}
+                      <div 
+                        className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-full opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                        onClick={() => fileInputRef.current?.click()}
+                      >
+                        {isUploadingPicture ? (
+                          <Loader2 className="h-8 w-8 text-white animate-spin" />
+                        ) : (
+                          <Camera className="h-8 w-8 text-white" />
+                        )}
+                      </div>
+                      
+                      {/* Remove picture button if a profile picture exists */}
+                      {user.profilePicture && !isUploadingPicture && (
+                        <button
+                          type="button"
+                          className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            try {
+                              const response = await apiRequest("DELETE", "/api/user/profile-picture");
+                              
+                              if (response.ok) {
+                                // Update the cache to reflect the removed profile picture
+                                queryClient.setQueryData(["/api/user"], (oldData: any) => {
+                                  if (!oldData) return oldData;
+                                  return {
+                                    ...oldData,
+                                    profilePicture: null
+                                  };
+                                });
+                                
+                                toast({
+                                  title: "Profile picture removed",
+                                  description: "Your profile picture has been removed.",
+                                });
+                              } else {
+                                throw new Error("Failed to remove profile picture");
+                              }
+                            } catch (error: any) {
+                              toast({
+                                variant: "destructive",
+                                title: "Failed to remove profile picture",
+                                description: error.message || "Please try again later.",
+                              });
+                            }
+                          }}
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      )}
+                    </div>
+                    
                     <h3 className="text-xl font-bold">{user.name}</h3>
                     <p className="text-gray-500">{user.email}</p>
                     <Badge className="mt-2" variant="outline">{user.role || "User"}</Badge>
                     <p className="mt-4 text-sm">Company: {user.company}</p>
+                    
+                    {/* Button to change profile picture for mobile devices that can't hover */}
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      className="mt-4 md:hidden"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={isUploadingPicture}
+                    >
+                      {isUploadingPicture ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Uploading...
+                        </>
+                      ) : (
+                        <>
+                          <Camera className="mr-2 h-4 w-4" />
+                          Change Picture
+                        </>
+                      )}
+                    </Button>
                   </CardContent>
                 </Card>
 
