@@ -4,7 +4,11 @@ import {
   FileText, 
   Users, 
   Search, 
-  PuzzleIcon // Using PuzzleIcon instead of PuzzlePiece
+  PuzzleIcon, // Using PuzzleIcon instead of PuzzlePiece
+  Key,
+  Copy,
+  RefreshCw,
+  CheckCircle
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { Policy, Category } from "@shared/schema";
@@ -35,6 +39,11 @@ export default function DashboardPage() {
   const [isPolicyFormOpen, setIsPolicyFormOpen] = useState(false);
   const [selectedPolicy, setSelectedPolicy] = useState<Policy | null>(null);
   const [isViewPolicyOpen, setIsViewPolicyOpen] = useState(false);
+  
+  // Extension API key states
+  const [apiKey, setApiKey] = useState<string | null>(null);
+  const [apiKeyCopied, setApiKeyCopied] = useState(false);
+  const [isApiKeyDialogOpen, setIsApiKeyDialogOpen] = useState(false);
   
   // Fetch categories
   const { data: categories = [] } = useQuery<Category[]>({
@@ -150,6 +159,30 @@ export default function DashboardPage() {
       });
     },
   });
+  
+  // Generate API key mutation
+  const generateApiKeyMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/extension/generate-key");
+      return await res.json();
+    },
+    onSuccess: (data) => {
+      setApiKey(data.apiKey);
+      setIsApiKeyDialogOpen(true);
+      toast({
+        title: "API Key Generated",
+        description: "Your API key for the browser extension has been generated successfully.",
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/activities"] });
+    },
+    onError: (error) => {
+      toast({
+        title: "Failed to generate API key",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
 
   // Handle policy actions
   const handleAddNewPolicy = () => {
@@ -193,6 +226,21 @@ export default function DashboardPage() {
   const getCategoryColor = (categoryId: number) => {
     const category = categories.find(c => c.id === categoryId);
     return category ? category.color : "#6B7280"; // Default gray
+  };
+  
+  // Handle API key generation
+  const handleGenerateApiKey = () => {
+    generateApiKeyMutation.mutate();
+  };
+  
+  // Handle copying API key to clipboard
+  const handleCopyApiKey = () => {
+    if (apiKey) {
+      navigator.clipboard.writeText(apiKey).then(() => {
+        setApiKeyCopied(true);
+        setTimeout(() => setApiKeyCopied(false), 2000);
+      });
+    }
   };
 
   return (
@@ -293,12 +341,75 @@ export default function DashboardPage() {
             </div>
           </div>
           
+          {/* Extension API Key Section */}
+          <div className="mt-6 bg-white rounded-lg shadow-sm border border-neutral-200 overflow-hidden">
+            <div className="px-6 py-4 border-b border-neutral-200">
+              <h2 className="font-semibold">Browser Extension</h2>
+            </div>
+            
+            <div className="p-6">
+              <div className="flex flex-col md:flex-row md:items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-medium">Extension API Key</h3>
+                  <p className="text-sm text-neutral-500 mt-1 mb-4 md:mb-0">
+                    Generate an API key to use with the browser extension.
+                  </p>
+                </div>
+                <Button 
+                  onClick={handleGenerateApiKey}
+                  className="flex items-center space-x-2"
+                  disabled={generateApiKeyMutation.isPending}
+                >
+                  {generateApiKeyMutation.isPending ? (
+                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Key className="h-4 w-4 mr-2" />
+                  )}
+                  Generate API Key
+                </Button>
+              </div>
+            </div>
+          </div>
+          
           {/* Activities Section */}
           <div className="mt-6">
             <ActivityList activities={activities.slice(0, 5)} />
           </div>
         </main>
       </div>
+      
+      {/* API Key Dialog */}
+      <Dialog open={isApiKeyDialogOpen} onOpenChange={setIsApiKeyDialogOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>API Key</DialogTitle>
+            <DialogDescription>
+              Use this API key with the browser extension to access policies from anywhere.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="border rounded-md p-3 bg-neutral-50 relative">
+            <p className="font-mono text-sm break-all pr-8">{apiKey}</p>
+            <button
+              onClick={handleCopyApiKey}
+              className="absolute right-3 top-3 p-1 rounded hover:bg-neutral-200"
+              title="Copy to clipboard"
+            >
+              {apiKeyCopied ? (
+                <CheckCircle className="h-4 w-4 text-green-500" />
+              ) : (
+                <Copy className="h-4 w-4 text-neutral-500" />
+              )}
+            </button>
+          </div>
+          
+          <DialogFooter className="flex gap-2">
+            <DialogClose asChild>
+              <Button type="button">Close</Button>
+            </DialogClose>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       
       {/* Policy Form Modal */}
       <PolicyForm

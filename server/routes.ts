@@ -13,7 +13,7 @@ import { z } from "zod";
 
 // Auth middleware to check if the user is authenticated
 function requireAuth(req: any, res: any, next: any) {
-  if (req.isAuthenticated()) {
+  if (req.isAuthenticated() && req.user) {
     return next();
   }
   res.status(401).json({ message: "Unauthorized" });
@@ -297,9 +297,78 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // API endpoint for browser extension
-  app.post("/api/extension/search", requireAuth, async (req, res) => {
+  // Generate API key for extension
+  app.post("/api/extension/generate-key", requireAuth, async (req, res) => {
     try {
+      // Ensure user is authenticated
+      if (!req.user) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      // Generate a random API key
+      const apiKey = Array(30)
+        .fill(0)
+        .map(() => Math.random().toString(36).charAt(2))
+        .join('');
+      
+      // In a real application, you would save this key to the user's profile
+      // For now we'll store it in memory associated with the user
+      const userData = await storage.getUser(req.user.id);
+      if (userData) {
+        await storage.updateUserApiKey(req.user.id, apiKey);
+        
+        // Log activity
+        await storage.createActivity({
+          userId: req.user.id,
+          action: "generated_api_key",
+          resourceType: "user",
+          resourceId: req.user.id,
+          details: "Generated API key for browser extension",
+        });
+        
+        res.json({ apiKey });
+      } else {
+        res.status(404).json({ message: "User not found" });
+      }
+    } catch (error) {
+      console.error("API key generation error:", error);
+      res.status(500).json({ message: "Failed to generate API key" });
+    }
+  });
+  
+  // Validate API key middleware
+  const validateApiKey = async (req: any, res: any, next: any) => {
+    const apiKey = req.headers['x-api-key'];
+    
+    if (!apiKey) {
+      return res.status(401).json({ message: "API key is required" });
+    }
+    
+    try {
+      // Find user by API key
+      const user = await storage.getUserByApiKey(apiKey);
+      
+      if (!user) {
+        return res.status(401).json({ message: "Invalid API key" });
+      }
+      
+      // Attach user to request
+      req.user = user;
+      next();
+    } catch (error) {
+      console.error("API key validation error:", error);
+      res.status(500).json({ message: "Failed to validate API key" });
+    }
+  };
+
+  // API endpoint for browser extension
+  app.post("/api/extension/search", validateApiKey, async (req, res) => {
+    try {
+      // Ensure user is authenticated via API key validation
+      if (!req.user) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
       const { query } = req.body;
       
       if (!query || typeof query !== 'string' || query.trim() === '') {

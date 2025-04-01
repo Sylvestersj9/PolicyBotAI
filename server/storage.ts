@@ -16,7 +16,9 @@ export interface IStorage {
   getUser(id: number): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
   getUserByEmail(email: string): Promise<User | undefined>;
+  getUserByApiKey(apiKey: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
+  updateUserApiKey(userId: number, apiKey: string): Promise<User | undefined>;
   
   // Category operations
   getCategories(): Promise<Category[]>;
@@ -42,7 +44,7 @@ export interface IStorage {
   createActivity(activity: InsertActivity): Promise<Activity>;
   
   // Session store
-  sessionStore: session.SessionStore;
+  sessionStore: any; // Using any as a workaround for SessionStore type issue
 }
 
 // In-memory storage implementation
@@ -58,7 +60,7 @@ export class MemStorage implements IStorage {
   policyCurrentId: number;
   searchQueryCurrentId: number;
   activityCurrentId: number;
-  sessionStore: session.SessionStore;
+  sessionStore: any; // Using any as a workaround for SessionStore type issue
 
   constructor() {
     this.users = new Map();
@@ -112,12 +114,36 @@ export class MemStorage implements IStorage {
     );
   }
 
+  async getUserByApiKey(apiKey: string): Promise<User | undefined> {
+    return Array.from(this.users.values()).find(
+      (user) => user.apiKey === apiKey,
+    );
+  }
+
   async createUser(insertUser: InsertUser): Promise<User> {
     const id = this.userCurrentId++;
     const createdAt = new Date();
-    const user: User = { ...insertUser, id, createdAt };
+    const user: User = { 
+      ...insertUser, 
+      id, 
+      createdAt,
+      apiKey: null // Initialize with null API key
+    };
     this.users.set(id, user);
     return user;
+  }
+  
+  async updateUserApiKey(userId: number, apiKey: string): Promise<User | undefined> {
+    const user = this.users.get(userId);
+    if (!user) return undefined;
+    
+    const updatedUser: User = {
+      ...user,
+      apiKey
+    };
+    
+    this.users.set(userId, updatedUser);
+    return updatedUser;
   }
 
   // Category operations

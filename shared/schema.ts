@@ -11,6 +11,7 @@ export const users = pgTable("users", {
   email: text("email").notNull().unique(),
   company: text("company").notNull(),
   role: text("role").notNull().default("admin"),
+  apiKey: text("api_key"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
