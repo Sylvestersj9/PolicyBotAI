@@ -78,12 +78,14 @@ export async function uploadBase64File(req: Request, res: Response) {
     
     console.log(`File written successfully: ${safeFileName}`);
     
-    // Return success response
+    // Return success response with consistent URL format
     return res.status(201).json({
       success: true,
-      fileName: safeFileName,
-      originalName: fileName,
+      filename: safeFileName,
+      originalname: fileName,
+      mimetype: buffer.toString('base64').indexOf('data:image/') === 0 ? 'image/jpeg' : 'application/octet-stream',
       size: buffer.length,
+      path: filePath.replace(/\\/g, '/'),
       url: `/uploads/${safeFileName}`
     });
   } catch (error: any) {

@@ -4,10 +4,13 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 
-// Ensure uploads directory exists
-const uploadDir = path.join(process.cwd(), 'uploads');
+// Ensure uploads directory exists in the public folder
+const uploadDir = path.join(process.cwd(), 'public', 'uploads');
+// Create the directory with proper permissions if it doesn't exist
 if (!fs.existsSync(uploadDir)) {
+  console.log(`Creating upload directory: ${uploadDir}`);
   fs.mkdirSync(uploadDir, { recursive: true });
+  console.log(`Upload directory created: ${uploadDir}`);
 }
 
 // Configure multer storage
@@ -115,12 +118,22 @@ export const processUploadedFile = (req: Request, res: Response) => {
     return res.status(400).json({ message: 'No file was uploaded' });
   }
   
-  // Return the file information to the client
+  // Create proper URL path for client to access the file
+  const filePathFormatted = req.file.path.replace(/\\/g, '/'); // Replace backslashes with forward slashes for consistency
+  
+  // Extract the filename from the path
+  const filename = path.basename(filePathFormatted);
+  
+  // Create a proper URL for the uploaded file
+  const fileUrl = `/uploads/${filename}`;
+  
+  // Return the file information to the client with proper URL
   return res.status(201).json({
     filename: req.file.filename,
     originalname: req.file.originalname,
     mimetype: req.file.mimetype,
     size: req.file.size,
-    path: req.file.path.replace(/\\/g, '/'), // Replace backslashes with forward slashes for consistency
+    path: filePathFormatted,
+    url: fileUrl
   });
 };
