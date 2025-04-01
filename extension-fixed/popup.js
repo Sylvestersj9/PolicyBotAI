@@ -1,6 +1,7 @@
 // Configuration
-// Try to get the URL from storage, fall back to localhost if not found
-let API_BASE_URL = 'http://localhost:5000';
+// Try to get the URL from storage, fall back to Replit URL if not found
+// IMPORTANT: HTTPS is required for Chrome extensions due to security restrictions
+let API_BASE_URL = 'https://yourreplit.repl.co';
 
 // Function to get stored API URL or use default
 function getApiBaseUrl() {
@@ -140,7 +141,16 @@ document.addEventListener('DOMContentLoaded', function() {
       // First, try a direct login (will work with CORS enabled servers)
       let response;
       try {
-        response = await fetch(`${API_BASE_URL}/api/login`, {
+        // Make sure the URL is HTTPS, not HTTP (Chrome security restriction)
+        let loginUrl = API_BASE_URL;
+        if (loginUrl.startsWith('http://')) {
+          console.log("Converting HTTP URL to HTTPS for security reasons");
+          loginUrl = loginUrl.replace('http://', 'https://');
+        }
+        
+        console.log(`Sending login request to: ${loginUrl}/api/login`);
+        
+        response = await fetch(`${loginUrl}/api/login`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -151,7 +161,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
       } catch (fetchError) {
         console.error("Fetch error during login:", fetchError);
-        throw new Error(`Network error: ${fetchError.message}. Check if the API URL is correct and the server is running.`);
+        throw new Error(`Network error: ${fetchError.message}. Make sure you're using HTTPS in the API URL and the server is running.`);
       }
       
       if (!response.ok) {
@@ -187,10 +197,13 @@ document.addEventListener('DOMContentLoaded', function() {
       }
       
       // Get API key
-      console.log(`Attempting to get API key from: ${API_BASE_URL}/api/extension/generate-key`);
+      // Make sure to use HTTPS for the API key URL too
+      let keyUrl = loginUrl; // Use the same URL we used for login (already converted to HTTPS if needed)
+      
+      console.log(`Attempting to get API key from: ${keyUrl}/api/extension/generate-key`);
       let keyResponse;
       try {
-        keyResponse = await fetch(`${API_BASE_URL}/api/extension/generate-key`, {
+        keyResponse = await fetch(`${keyUrl}/api/extension/generate-key`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -200,7 +213,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
       } catch (fetchError) {
         console.error("Fetch error during API key generation:", fetchError);
-        throw new Error(`Network error during API key generation: ${fetchError.message}`);
+        throw new Error(`Network error during API key generation: ${fetchError.message}. Make sure you're using HTTPS.`);
       }
       
       if (!keyResponse.ok) {
@@ -295,11 +308,18 @@ document.addEventListener('DOMContentLoaded', function() {
       searchBtn.textContent = 'Searching...';
       searchBtn.disabled = true;
       
-      console.log(`Searching with query: "${query}" at ${API_BASE_URL}/api/extension/search`);
+      // Make sure the URL is HTTPS, not HTTP (Chrome security restriction)
+      let searchUrl = API_BASE_URL;
+      if (searchUrl.startsWith('http://')) {
+        console.log("Converting HTTP URL to HTTPS for security reasons");
+        searchUrl = searchUrl.replace('http://', 'https://');
+      }
+      
+      console.log(`Searching with query: "${query}" at ${searchUrl}/api/extension/search`);
       
       let response;
       try {
-        response = await fetch(`${API_BASE_URL}/api/extension/search`, {
+        response = await fetch(`${searchUrl}/api/extension/search`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -311,7 +331,7 @@ document.addEventListener('DOMContentLoaded', function() {
         console.log("Search response status:", response.status);
       } catch (fetchError) {
         console.error("Fetch error during search:", fetchError);
-        throw new Error(`Network error during search: ${fetchError.message}. Check if the API URL is correct and the server is running.`);
+        throw new Error(`Network error during search: ${fetchError.message}. Make sure you're using HTTPS in the API URL and the server is running.`);
       }
       
       if (!response.ok) {
@@ -446,7 +466,13 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // Open the main dashboard
   function openDashboard() {
-    chrome.tabs.create({ url: API_BASE_URL });
+    // Make sure we use HTTPS for opening the dashboard too
+    let dashboardUrl = API_BASE_URL;
+    if (dashboardUrl.startsWith('http://')) {
+      console.log("Converting dashboard HTTP URL to HTTPS");
+      dashboardUrl = dashboardUrl.replace('http://', 'https://');
+    }
+    chrome.tabs.create({ url: dashboardUrl });
   }
 
   // Initialize the extension
