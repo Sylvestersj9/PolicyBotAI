@@ -1,0 +1,827 @@
+Login error: TypeError: Failed to fetch
+Context
+popup.html
+Stack Trace
+popup.js:222 (handleLogin)
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+28
+29
+30
+31
+32
+33
+34
+35
+36
+37
+38
+39
+40
+41
+42
+43
+44
+45
+46
+47
+48
+49
+50
+51
+52
+53
+54
+55
+56
+57
+58
+59
+60
+61
+62
+63
+64
+65
+66
+67
+68
+69
+70
+71
+72
+73
+74
+75
+76
+77
+78
+79
+80
+81
+82
+83
+84
+85
+86
+87
+88
+89
+90
+91
+92
+93
+94
+95
+96
+97
+98
+99
+100
+101
+102
+103
+104
+105
+106
+107
+108
+109
+110
+111
+112
+113
+114
+115
+116
+117
+118
+119
+120
+121
+122
+123
+124
+125
+126
+127
+128
+129
+130
+131
+132
+133
+134
+135
+136
+137
+138
+139
+140
+141
+142
+143
+144
+145
+146
+147
+148
+149
+150
+151
+152
+153
+154
+155
+156
+157
+158
+159
+160
+161
+162
+163
+164
+165
+166
+167
+168
+169
+170
+171
+172
+173
+174
+175
+176
+177
+178
+179
+180
+181
+182
+183
+184
+185
+186
+187
+188
+189
+190
+191
+192
+193
+194
+195
+196
+197
+198
+199
+200
+201
+202
+203
+204
+205
+206
+207
+208
+209
+210
+211
+212
+213
+214
+215
+216
+217
+218
+219
+220
+221
+222
+223
+224
+225
+226
+227
+228
+229
+230
+231
+232
+233
+234
+235
+236
+237
+238
+239
+240
+241
+242
+243
+244
+245
+246
+247
+248
+249
+250
+251
+252
+253
+254
+255
+256
+257
+258
+259
+260
+261
+262
+263
+264
+265
+266
+267
+268
+269
+270
+271
+272
+273
+274
+275
+276
+277
+278
+279
+280
+281
+282
+283
+284
+285
+286
+287
+288
+289
+290
+291
+292
+293
+294
+295
+296
+297
+298
+299
+300
+301
+302
+303
+304
+305
+306
+307
+308
+309
+310
+311
+312
+313
+314
+315
+316
+317
+318
+319
+320
+321
+322
+323
+324
+325
+326
+327
+328
+329
+330
+331
+332
+333
+334
+335
+336
+337
+338
+339
+340
+341
+342
+343
+344
+345
+346
+347
+348
+349
+350
+351
+352
+353
+354
+355
+356
+357
+358
+359
+360
+361
+362
+363
+364
+365
+366
+367
+368
+369
+370
+371
+372
+373
+374
+375
+376
+377
+378
+379
+380
+381
+382
+383
+384
+385
+386
+387
+388
+389
+390
+391
+392
+393
+394
+395
+396
+397
+398
+399
+400
+401
+402
+403
+404
+405
+406
+407
+408
+409
+410
+411
+// Configuration
+// Try to get the URL from storage, fall back to localhost if not found
+let API_BASE_URL = 'http://localhost:5000';
+
+// Function to get stored API URL or use default
+function getApiBaseUrl() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(['apiBaseUrl'], (result) => {
+      if (result.apiBaseUrl) {
+        resolve(result.apiBaseUrl);
+      } else {
+        resolve(API_BASE_URL);
+      }
+    });
+  });
+}
+
+// Function to save API URL
+function saveApiBaseUrl(url) {
+  chrome.storage.local.set({ apiBaseUrl: url });
+  API_BASE_URL = url;
+}
+
+// DOM Elements
+document.addEventListener('DOMContentLoaded', function() {
+  const loginForm = document.getElementById('login-form');
+  const authForm = document.getElementById('auth-form');
+  const usernameInput = document.getElementById('username-input');
+  const passwordInput = document.getElementById('password-input');
+  const loginBtn = document.getElementById('login-btn');
+  const logoutBtn = document.getElementById('logout-btn');
+  const usernameDisplay = document.getElementById('username');
+  const searchInput = document.getElementById('search-input');
+  const searchBtn = document.getElementById('search-btn');
+  const resultsSection = document.getElementById('results-section');
+  const resultsContent = document.getElementById('results-content');
+  const recentSearches = document.getElementById('recent-searches');
+  const recentSearchesList = document.getElementById('recent-searches-list');
+  const openAppLink = document.getElementById('open-app');
+
+  // State
+  let apiKey = null;
+  let currentUser = null;
+  let searchHistory = [];
+
+  // Initialize the extension
+  async function init() {
+    // Load the API URL first
+    API_BASE_URL = await getApiBaseUrl();
+    
+    // Add settings/configuration section to the login form
+    const settingsHtml = `
+      <div class="form-group api-url-config" style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #eee;">
+        <label for="api-url">API Server URL</label>
+        <input type="text" id="api-url-input" value="${API_BASE_URL}" style="margin-bottom: 5px;">
+        <button type="button" id="save-api-url" style="width: 100%;">Save API URL</button>
+      </div>
+    `;
+    
+    // Add settings to login form
+    loginForm.insertAdjacentHTML('beforeend', settingsHtml);
+    
+    // Add event listener for the save API URL button
+    document.getElementById('save-api-url').addEventListener('click', () => {
+      const newUrl = document.getElementById('api-url-input').value.trim();
+      if (newUrl) {
+        saveApiBaseUrl(newUrl);
+        alert(`API URL updated to: ${newUrl}`);
+      }
+    });
+    
+    // Load saved state
+    chrome.storage.local.get(['apiKey', 'user', 'searchHistory'], (result) => {
+      if (result.apiKey) {
+        apiKey = result.apiKey;
+      }
+      
+      if (result.user) {
+        currentUser = result.user;
+        updateUserInterface();
+      }
+      
+      if (result.searchHistory) {
+        searchHistory = result.searchHistory;
+        updateRecentSearches();
+      }
+    });
+    
+    // Set up event listeners
+    loginBtn.addEventListener('click', toggleLoginForm);
+    logoutBtn.addEventListener('click', handleLogout);
+    authForm.addEventListener('submit', handleLogin);
+    searchBtn.addEventListener('click', handleSearch);
+    searchInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') handleSearch();
+    });
+    openAppLink.addEventListener('click', openDashboard);
+  }
+
+  // Update UI based on authentication state
+  function updateUserInterface() {
+    if (currentUser) {
+      usernameDisplay.textContent = currentUser.username;
+      loginBtn.classList.add('hidden');
+      logoutBtn.classList.remove('hidden');
+      loginForm.classList.add('hidden');
+    } else {
+      usernameDisplay.textContent = 'Not logged in';
+      loginBtn.classList.remove('hidden');
+      logoutBtn.classList.add('hidden');
+    }
+  }
+
+  // Toggle login form visibility
+  function toggleLoginForm() {
+    loginForm.classList.toggle('hidden');
+  }
+
+  // Handle login form submission
+  async function handleLogin(e) {
+    e.preventDefault();
+    
+    const username = usernameInput.value.trim();
+    const password = passwordInput.value;
+    
+    if (!username || !password) {
+      alert('Please enter both username and password');
+      return;
+    }
+    
+    try {
+      // Show loading/progress indicator
+      const submitBtn = document.getElementById('submit-login');
+      const originalBtnText = submitBtn.textContent;
+      submitBtn.textContent = 'Logging in...';
+      submitBtn.disabled = true;
+      
+      const response = await fetch(`${API_BASE_URL}/api/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ username, password })
+      });
+      
+      if (!response.ok) {
+        let errorMessage = 'Login failed';
+        try {
+          // Try to parse error message from response
+          const errorData = await response.json();
+          if (errorData && errorData.message) {
+            errorMessage = errorData.message;
+          }
+        } catch (e) {
+          // If response isn't JSON, use text or status
+          errorMessage = `Login failed with status ${response.status}`;
+          try {
+            const textError = await response.text();
+            if (textError) {
+              errorMessage += `: ${textError}`;
+            }
+          } catch (_) {
+            // Ignore if we can't get text
+          }
+        }
+        throw new Error(errorMessage);
+      }
+      
+      let userData;
+      try {
+        userData = await response.json();
+      } catch (e) {
+        throw new Error('Invalid response format from server. Expected JSON.');
+      }
+      
+      // Get API key
+      const keyResponse = await fetch(`${API_BASE_URL}/api/extension/generate-key`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        credentials: 'include' // Include cookies for session authentication
+      });
+      
+      if (!keyResponse.ok) {
+        let errorMessage = 'Failed to get API key';
+        try {
+          const errorData = await keyResponse.json();
+          if (errorData && errorData.message) {
+            errorMessage = errorData.message;
+          }
+        } catch (e) {
+          errorMessage = `API key generation failed with status ${keyResponse.status}`;
+        }
+        throw new Error(errorMessage);
+      }
+      
+      let keyData;
+      try {
+        keyData = await keyResponse.json();
+        if (!keyData || !keyData.apiKey) {
+          throw new Error('No API key returned from server');
+        }
+      } catch (e) {
+        throw new Error('Invalid response format from server. Expected JSON with apiKey property.');
+      }
+      
+      apiKey = keyData.apiKey;
+      
+      // Save to local storage
+      currentUser = userData;
+      chrome.storage.local.set({ apiKey, user: userData });
+      
+      updateUserInterface();
+      loginForm.classList.add('hidden');
+      
+      // Reset button state
+      submitBtn.textContent = originalBtnText;
+      submitBtn.disabled = false;
+      
+    } catch (error) {
+      console.error('Login error:', error);
+      // Reset button state
+      const submitBtn = document.getElementById('submit-login');
+      if (submitBtn) {
+        submitBtn.textContent = 'Login';
+        submitBtn.disabled = false;
+      }
+      
+      alert(`Login error: ${error.message}`);
+    }
+  }
+
+  // Handle logout
+  function handleLogout() {
+    // Clear local storage
+    chrome.storage.local.remove(['apiKey', 'user']);
+    apiKey = null;
+    currentUser = null;
+    
+    updateUserInterface();
+  }
+
+  // Handle search
+  async function handleSearch() {
+    const query = searchInput.value.trim();
+    
+    if (!query) {
+      alert('Please enter a search query');
+      return;
+    }
+    
+    if (!apiKey) {
+      alert('Please log in to search policies');
+      toggleLoginForm();
+      return;
+    }
+    
+    try {
+      // Show loading state
+      resultsContent.innerHTML = '<p>Searching policies...</p>';
+      resultsSection.classList.remove('hidden');
+      
+      // Disable search button during request
+      const searchButtonOrigText = searchBtn.textContent;
+      searchBtn.textContent = 'Searching...';
+      searchBtn.disabled = true;
+      
+      const response = await fetch(`${API_BASE_URL}/api/extension/search`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-Key': apiKey
+        },
+        body: JSON.stringify({ query })
+      });
+      
+      if (!response.ok) {
+        let errorMessage = 'Search failed';
+        try {
+          // Try to parse error message from response
+          const errorData = await response.json();
+          if (errorData && errorData.message) {
+            errorMessage = errorData.message;
+          }
+        } catch (e) {
+          // If response isn't JSON, use text or status
+          errorMessage = `Search failed with status ${response.status}`;
+          try {
+            const textError = await response.text();
+            if (textError) {
+              errorMessage += `: ${textError}`;
+            }
+          } catch (_) {
+            // Ignore if we can't get text
+          }
+        }
+        throw new Error(errorMessage);
+      }
+      
+      let result;
+      try {
+        result = await response.json();
+      } catch (e) {
+        throw new Error('Invalid response format from server. Expected JSON.');
+      }
+      
+      // Update search history
+      const newSearch = {
+        query,
+        timestamp: new Date().toISOString(),
+        result
+      };
+      searchHistory = [newSearch, ...searchHistory.slice(0, 4)];
+      chrome.storage.local.set({ searchHistory });
+      updateRecentSearches();
+      
+      // Display results
+      displaySearchResults(result, query);
+      
+      // Reset search button
+      searchBtn.textContent = searchButtonOrigText;
+      searchBtn.disabled = false;
+    } catch (error) {
+      console.error('Search error:', error);
+      
+      // Reset search button
+      searchBtn.textContent = 'Search';
+      searchBtn.disabled = false;
+      
+      resultsContent.innerHTML = `<p>Error: ${error.message}</p>
+        <p>Please check your connection and API URL settings.</p>
+        <p>Current API URL: ${API_BASE_URL}</p>
+        <button id="fix-api-url" class="error-action">Update API URL</button>`;
+      
+      // Add event listener to the fix button
+      document.getElementById('fix-api-url')?.addEventListener('click', () => {
+        toggleLoginForm();
+        // Focus the API URL input
+        setTimeout(() => {
+          const apiUrlInput = document.getElementById('api-url-input');
+          if (apiUrlInput) {
+            apiUrlInput.focus();
+          }
+        }, 100);
+      });
+    }
+  }
+
+  // Display search results
+  function displaySearchResults(result, query) {
+    let html = '';
+    
+    if (result.policyId) {
+      const confidencePercent = Math.round(result.confidence * 100);
+      
+      html = `
+        <div class="result-item">
+          <h4>${result.policyTitle || 'Policy'}</h4>
+          <p>${result.answer}</p>
+          <div class="result-meta">
+            <span>Reference: Policy #${result.policyId}</span>
+            <div class="confidence">
+              <span>${confidencePercent}%</span>
+              <div class="confidence-bar">
+                <div class="confidence-level" style="width: ${confidencePercent}%"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    } else {
+      html = `
+        <div class="result-item">
+          <p>${result.answer}</p>
+        </div>
+      `;
+    }
+    
+    resultsContent.innerHTML = html;
+  }
+
+  // Update recent searches list
+  function updateRecentSearches() {
+    if (searchHistory.length > 0) {
+      recentSearches.classList.remove('hidden');
+      recentSearchesList.innerHTML = '';
+      
+      searchHistory.forEach(item => {
+        const li = document.createElement('li');
+        li.textContent = item.query;
+        li.addEventListener('click', () => {
+          searchInput.value = item.query;
+          displaySearchResults(item.result, item.query);
+          resultsSection.classList.remove('hidden');
+        });
+        recentSearchesList.appendChild(li);
+      });
+    } else {
+      recentSearches.classList.add('hidden');
+    }
+  }
+
+  // Open the main dashboard
+  function openDashboard() {
+    chrome.tabs.create({ url: API_BASE_URL });
+  }
+
+  // Initialize the extension
+  init();
+});

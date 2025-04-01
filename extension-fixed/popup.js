@@ -135,13 +135,24 @@ document.addEventListener('DOMContentLoaded', function() {
       submitBtn.textContent = 'Logging in...';
       submitBtn.disabled = true;
       
-      const response = await fetch(`${API_BASE_URL}/api/login`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ username, password })
-      });
+      console.log(`Attempting login to: ${API_BASE_URL}/api/login`);
+      
+      // First, try a direct login (will work with CORS enabled servers)
+      let response;
+      try {
+        response = await fetch(`${API_BASE_URL}/api/login`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          },
+          credentials: 'include', // Include cookies
+          body: JSON.stringify({ username, password })
+        });
+      } catch (fetchError) {
+        console.error("Fetch error during login:", fetchError);
+        throw new Error(`Network error: ${fetchError.message}. Check if the API URL is correct and the server is running.`);
+      }
       
       if (!response.ok) {
         let errorMessage = 'Login failed';
@@ -169,18 +180,28 @@ document.addEventListener('DOMContentLoaded', function() {
       let userData;
       try {
         userData = await response.json();
+        console.log("Login successful, user data:", userData);
       } catch (e) {
+        console.error("Error parsing user data:", e);
         throw new Error('Invalid response format from server. Expected JSON.');
       }
       
       // Get API key
-      const keyResponse = await fetch(`${API_BASE_URL}/api/extension/generate-key`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        credentials: 'include' // Include cookies for session authentication
-      });
+      console.log(`Attempting to get API key from: ${API_BASE_URL}/api/extension/generate-key`);
+      let keyResponse;
+      try {
+        keyResponse = await fetch(`${API_BASE_URL}/api/extension/generate-key`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          },
+          credentials: 'include' // Include cookies for session authentication
+        });
+      } catch (fetchError) {
+        console.error("Fetch error during API key generation:", fetchError);
+        throw new Error(`Network error during API key generation: ${fetchError.message}`);
+      }
       
       if (!keyResponse.ok) {
         let errorMessage = 'Failed to get API key';
@@ -191,6 +212,12 @@ document.addEventListener('DOMContentLoaded', function() {
           }
         } catch (e) {
           errorMessage = `API key generation failed with status ${keyResponse.status}`;
+          try {
+            const textError = await keyResponse.text();
+            console.error("API key error response:", textError);
+          } catch (_) {
+            // Ignore if we can't get text
+          }
         }
         throw new Error(errorMessage);
       }
@@ -198,10 +225,12 @@ document.addEventListener('DOMContentLoaded', function() {
       let keyData;
       try {
         keyData = await keyResponse.json();
+        console.log("API key response received:", keyData);
         if (!keyData || !keyData.apiKey) {
           throw new Error('No API key returned from server');
         }
       } catch (e) {
+        console.error("Error parsing API key response:", e);
         throw new Error('Invalid response format from server. Expected JSON with apiKey property.');
       }
       
@@ -266,20 +295,31 @@ document.addEventListener('DOMContentLoaded', function() {
       searchBtn.textContent = 'Searching...';
       searchBtn.disabled = true;
       
-      const response = await fetch(`${API_BASE_URL}/api/extension/search`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-API-Key': apiKey
-        },
-        body: JSON.stringify({ query })
-      });
+      console.log(`Searching with query: "${query}" at ${API_BASE_URL}/api/extension/search`);
+      
+      let response;
+      try {
+        response = await fetch(`${API_BASE_URL}/api/extension/search`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'X-API-Key': apiKey
+          },
+          body: JSON.stringify({ query })
+        });
+        console.log("Search response status:", response.status);
+      } catch (fetchError) {
+        console.error("Fetch error during search:", fetchError);
+        throw new Error(`Network error during search: ${fetchError.message}. Check if the API URL is correct and the server is running.`);
+      }
       
       if (!response.ok) {
         let errorMessage = 'Search failed';
         try {
           // Try to parse error message from response
           const errorData = await response.json();
+          console.error("Error data from server:", errorData);
           if (errorData && errorData.message) {
             errorMessage = errorData.message;
           }
@@ -288,6 +328,7 @@ document.addEventListener('DOMContentLoaded', function() {
           errorMessage = `Search failed with status ${response.status}`;
           try {
             const textError = await response.text();
+            console.error("Error text from server:", textError);
             if (textError) {
               errorMessage += `: ${textError}`;
             }
@@ -301,7 +342,9 @@ document.addEventListener('DOMContentLoaded', function() {
       let result;
       try {
         result = await response.json();
+        console.log("Search result:", result);
       } catch (e) {
+        console.error("Error parsing search result:", e);
         throw new Error('Invalid response format from server. Expected JSON.');
       }
       
