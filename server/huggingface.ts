@@ -92,6 +92,7 @@ Your task:
 3. Include the policy ID number in your response
 4. Assess your confidence in the answer (from 0.0 to 1.0)
 5. If no policy directly addresses the question, clearly state this fact
+6. IMPORTANT: You must format your entire response as a valid JSON object following the required format below
 
 Format your response ONLY as a JSON object with these fields:
 - policyId: The numeric ID of the policy that contains the answer
@@ -100,6 +101,8 @@ Format your response ONLY as a JSON object with these fields:
 
 JSON EXAMPLE RESPONSE:
 {"policyId": 2, "answer": "According to Policy #2, 'employees must report incidents within 24 hours'", "confidence": 0.9}
+
+Do not include any other text, explanations, or commentary in your response - only return a properly formatted JSON object.
 [/INST]`;
 
     // Call the model with enhanced error handling and fallback
@@ -395,6 +398,8 @@ Example Response Format:
     "Annual data protection training is mandatory"
   ]
 }
+
+IMPORTANT: You must format your entire response as a valid JSON object. Do not include any other text, explanations, or commentary - only return a properly formatted JSON object.
 [/INST]`;
 
     // Call the model with enhanced error handling and fallback

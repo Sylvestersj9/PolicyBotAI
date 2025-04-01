@@ -53,7 +53,7 @@ export default function SearchResult({ id, query, result, timestamp }: SearchRes
         {/* Show a contact admin message for specific errors */}
         {errorType === 'rate_limit' && (
           <p className="text-xs mt-1 text-amber-600 font-medium">
-            AI quota exceeded. Contact administrator to renew subscription.
+            Hugging Face API quota exceeded. Contact administrator to renew subscription.
           </p>
         )}
         

@@ -55,13 +55,13 @@ export default function AISearchPage() {
         
         if (errorType === 'rate_limit') {
           toast({
-            title: "OpenAI API Quota Exceeded",
+            title: "Hugging Face API Quota Exceeded",
             description: "The AI service has reached its usage limit. Please contact your administrator.",
             variant: "destructive",
           });
         } else if (errorType === 'auth_error') {
           toast({
-            title: "OpenAI API Authentication Error",
+            title: "Hugging Face API Authentication Error",
             description: "The AI service is not properly configured. Please contact your administrator.",
             variant: "destructive",
           });
