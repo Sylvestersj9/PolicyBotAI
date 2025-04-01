@@ -10,7 +10,8 @@ import { z } from "zod";
 
 declare global {
   namespace Express {
-    interface User extends User {}
+    // Fix circular reference by using the imported User type
+    interface User extends Omit<import('@shared/schema').User, 'password'> {}
   }
 }
 
