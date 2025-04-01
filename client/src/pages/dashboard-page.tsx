@@ -257,7 +257,7 @@ export default function DashboardPage() {
     <div className="flex h-screen">
       <Sidebar />
       
-      <div className="flex-1 flex flex-col overflow-hidden ml-0 lg:ml-0 transition-all duration-300">
+      <div className="flex-1 flex flex-col overflow-hidden">
         <Header title="Dashboard" />
         
         <main className="flex-1 overflow-y-auto p-6">
