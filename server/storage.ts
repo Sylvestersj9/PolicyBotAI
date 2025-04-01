@@ -81,6 +81,32 @@ export class MemStorage implements IStorage {
     
     // Initialize with default categories
     this.initializeDefaultCategories();
+    
+    // Create a default admin user for testing
+    this.createDefaultTestUser();
+  }
+  
+  private async createDefaultTestUser() {
+    // Use a hardcoded hash for "password123" 
+    // This is a valid scrypt hash for "password123" that will work with the comparePasswords function
+    const hashedPassword = "5dde749c8e9dfad799851738de21d4959869d34caec869cce2d0428ba4ef0bc085d5ef9e4be6345367c86474d45a4b26d3e57b4239a398b25f541c66c19f4a27.ad11694e1ef12238faefff3d4a4840fd";
+    
+    // Create a test user if none exists
+    const testUser: InsertUser = {
+      username: "admin",
+      password: hashedPassword, 
+      name: "Admin User",
+      email: "admin@example.com",
+      company: "Test Company",
+      role: "admin"
+    };
+    
+    // Check if user doesn't already exist
+    const existingUser = await this.getUserByUsername(testUser.username);
+    if (!existingUser) {
+      await this.createUser(testUser);
+      console.log('Created default test user: admin/password123');
+    }
   }
 
   private initializeDefaultCategories() {
