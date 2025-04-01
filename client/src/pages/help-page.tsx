@@ -59,7 +59,7 @@ export default function HelpPage() {
   return (
     <div className="flex min-h-screen bg-gray-50">
       <Sidebar />
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 overflow-auto ml-0 lg:ml-0 transition-all duration-300">
         <div className="container py-10">
           <div className="mb-10">
             <h1 className="text-3xl font-bold">Help & Support</h1>
