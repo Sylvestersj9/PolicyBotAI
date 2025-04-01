@@ -9,36 +9,36 @@
 
   body {
     @apply font-sans antialiased bg-background text-foreground;
-    background-image: linear-gradient(to bottom right, rgba(250, 246, 255, 0.8), rgba(255, 255, 255, 1));
+    background-image: linear-gradient(to bottom right, rgba(245, 250, 255, 0.5), rgba(255, 255, 255, 1));
     min-height: 100vh;
   }
 
   h1, h2, h3, h4, h5, h6 {
-    @apply bg-clip-text text-transparent bg-gradient-to-r from-primary to-primary/80 font-bold;
+    @apply font-bold text-primary;
   }
 }
 
 @layer components {
-  /* Card hover effects */
+  /* Card hover effects - more subtle */
   .interactive-card {
-    @apply transition-all duration-300 hover:shadow-lg hover:-translate-y-1 hover:bg-gradient-to-br hover:from-background hover:to-background/95;
+    @apply transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 hover:bg-background/80;
   }
 
-  /* Animated button */
+  /* Animated button - more minimalistic */
   .btn-animated {
-    @apply relative overflow-hidden transition-all duration-300 hover:shadow-md active:scale-95;
+    @apply relative overflow-hidden transition-all duration-200 hover:shadow-sm active:scale-95;
   }
   
   .btn-animated:after {
     content: '';
-    @apply absolute inset-0 bg-white opacity-0 transition-opacity duration-300;
+    @apply absolute inset-0 bg-white opacity-0 transition-opacity duration-200;
   }
   
   .btn-animated:hover:after {
-    @apply opacity-20;
+    @apply opacity-10;
   }
 
-  /* Gradient borders */
+  /* Subtle borders */
   .gradient-border {
     position: relative;
     border-radius: inherit;
@@ -53,50 +53,38 @@
     bottom: -1px;
     border-radius: inherit;
     padding: 1px;
-    background: linear-gradient(45deg, theme('colors.primary'), theme('colors.primary/50'));
+    background: linear-gradient(45deg, theme('colors.primary/70'), theme('colors.primary/30'));
     -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
     -webkit-mask-composite: xor;
     mask-composite: exclude;
     pointer-events: none;
     opacity: 0;
-    transition: opacity 0.3s ease;
+    transition: opacity 0.2s ease;
   }
   
   .gradient-border:hover::before {
-    opacity: 1;
+    opacity: 0.8;
   }
 
-  /* Pulse animation */
+  /* Subtle hover effect */
   .pulse-on-hover {
-    @apply transition-all duration-300;
+    @apply transition-all duration-200;
   }
   
   .pulse-on-hover:hover {
-    animation: pulse 2s infinite;
-  }
-  
-  @keyframes pulse {
-    0% {
-      box-shadow: 0 0 0 0 rgba(var(--color-primary), 0.7);
-    }
-    70% {
-      box-shadow: 0 0 0 10px rgba(var(--color-primary), 0);
-    }
-    100% {
-      box-shadow: 0 0 0 0 rgba(var(--color-primary), 0);
-    }
+    @apply shadow-sm;
   }
 
-  /* Shimmer effect for loading states */
+  /* Subtle shimmer effect for loading states */
   .shimmer {
     background: linear-gradient(
       90deg,
       theme('colors.background') 0%,
-      theme('colors.muted') 50%,
+      theme('colors.muted/40') 50%,
       theme('colors.background') 100%
     );
     background-size: 200% 100%;
-    animation: shimmer 1.5s infinite;
+    animation: shimmer 2s ease-in-out infinite;
   }
   
   @keyframes shimmer {
