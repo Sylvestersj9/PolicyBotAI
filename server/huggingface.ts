@@ -104,10 +104,30 @@ Example response format:
 
   } catch (error: any) {
     console.error("Error querying Hugging Face AI:", error);
+    
+    // Determine the type of error
+    let errorType = "unknown_error";
+    let errorMessage = "Sorry, I encountered an error while searching the policies. Please try again later.";
+    
+    if (error.name === "TypeError" && error.message.includes("fetch")) {
+      errorType = "network_error";
+      errorMessage = "Unable to connect to the AI service. Please check your internet connection and try again.";
+    } else if (error.status === 429 || (error.message && error.message.includes("rate"))) {
+      errorType = "rate_limit";
+      errorMessage = "The AI service rate limit has been exceeded. Please try again later.";
+    } else if (error.status === 401 || error.status === 403 || 
+              (error.message && (error.message.includes("auth") || error.message.includes("key")))) {
+      errorType = "auth_error";
+      errorMessage = "There was an authentication issue with the AI service. Please contact your administrator.";
+    } else if (error.message && error.message.includes("model")) {
+      errorType = "model_error";
+      errorMessage = "There was a problem with the selected AI model. Please contact your administrator.";
+    }
+    
     return {
-      answer: "Sorry, I encountered an error while searching the policies. Please try again later.",
+      answer: errorMessage,
       confidence: 0,
-      error: error.message || "unknown_error"
+      error: errorType
     };
   }
 }
@@ -163,11 +183,26 @@ ${policyContent}
       summary: result.summary || "No summary provided",
       keyPoints: Array.isArray(result.keyPoints) ? result.keyPoints : ["No key points provided"]
     };
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error analyzing policy content:", error);
+    
+    // Determine the type of error for better error messaging
+    let errorMessage = "Error analyzing the policy content.";
+    
+    if (error.name === "TypeError" && error.message.includes("fetch")) {
+      errorMessage = "Unable to connect to the AI service. Please check your internet connection.";
+    } else if (error.status === 429 || (error.message && error.message.includes("rate"))) {
+      errorMessage = "The AI service rate limit has been exceeded. Please try again later.";
+    } else if (error.status === 401 || error.status === 403 || 
+              (error.message && (error.message.includes("auth") || error.message.includes("key")))) {
+      errorMessage = "There was an authentication issue with the AI service.";
+    } else if (error.message && error.message.includes("model")) {
+      errorMessage = "There was a problem with the selected AI model.";
+    }
+    
     return {
-      summary: "Error analyzing the policy content.",
-      keyPoints: ["Analysis failed due to an error."]
+      summary: errorMessage,
+      keyPoints: ["Analysis failed due to an error.", "Please try again later or contact support."]
     };
   }
 }

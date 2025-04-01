@@ -571,10 +571,13 @@ document.addEventListener('DOMContentLoaded', function() {
       
       if (result.error === 'rate_limit') {
         errorClass = 'warning';
-        errorMessage = '<p class="error-hint">The API quota has been exceeded. Please contact your administrator to update the OpenAI subscription.</p>';
+        errorMessage = '<p class="error-hint">The AI service rate limit has been exceeded. Please try again later or contact your administrator.</p>';
       } else if (result.error === 'auth_error') {
         errorClass = 'error';
         errorMessage = '<p class="error-hint">The AI service is not properly configured. Please contact your administrator.</p>';
+      } else if (result.error === 'model_error') {
+        errorClass = 'error';
+        errorMessage = '<p class="error-hint">There was a problem with the AI model. Please contact your administrator.</p>';
       }
       
       html = `
