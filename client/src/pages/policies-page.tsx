@@ -52,8 +52,39 @@ export default function PoliciesPage() {
   // Create policy mutation
   const createPolicyMutation = useMutation({
     mutationFn: async (policyData: any) => {
-      const res = await apiRequest("POST", "/api/policies", policyData);
-      return await res.json();
+      try {
+        console.log("Sending policy data to server:", policyData);
+        const res = await apiRequest("POST", "/api/policies", policyData);
+        
+        if (!res.ok) {
+          // Try to extract error details from response
+          const errorText = await res.text();
+          let errorMessage = `Server error: ${res.status}`;
+          
+          try {
+            // Try to parse as JSON
+            const errorData = JSON.parse(errorText);
+            if (errorData.message) {
+              errorMessage = errorData.message;
+            }
+            if (errorData.errors) {
+              errorMessage += `: ${JSON.stringify(errorData.errors)}`;
+            }
+          } catch (e) {
+            // Not JSON, use as text
+            if (errorText) {
+              errorMessage = errorText;
+            }
+          }
+          
+          throw new Error(errorMessage);
+        }
+        
+        return await res.json();
+      } catch (error) {
+        console.error("Create policy error:", error);
+        throw error;
+      }
     },
     onSuccess: () => {
       toast({
@@ -62,10 +93,11 @@ export default function PoliciesPage() {
       });
       queryClient.invalidateQueries({ queryKey: ["/api/policies"] });
     },
-    onError: (error) => {
+    onError: (error: any) => {
+      console.error("Create policy error details:", error);
       toast({
         title: "Failed to create policy",
-        description: error.message,
+        description: error.message || "Unknown error occurred",
         variant: "destructive",
       });
     },
@@ -74,8 +106,39 @@ export default function PoliciesPage() {
   // Update policy mutation
   const updatePolicyMutation = useMutation({
     mutationFn: async ({ id, data }: { id: number; data: any }) => {
-      const res = await apiRequest("PUT", `/api/policies/${id}`, data);
-      return await res.json();
+      try {
+        console.log("Updating policy:", id, "with data:", data);
+        const res = await apiRequest("PUT", `/api/policies/${id}`, data);
+        
+        if (!res.ok) {
+          // Try to extract error details from response
+          const errorText = await res.text();
+          let errorMessage = `Server error: ${res.status}`;
+          
+          try {
+            // Try to parse as JSON
+            const errorData = JSON.parse(errorText);
+            if (errorData.message) {
+              errorMessage = errorData.message;
+            }
+            if (errorData.errors) {
+              errorMessage += `: ${JSON.stringify(errorData.errors)}`;
+            }
+          } catch (e) {
+            // Not JSON, use as text
+            if (errorText) {
+              errorMessage = errorText;
+            }
+          }
+          
+          throw new Error(errorMessage);
+        }
+        
+        return await res.json();
+      } catch (error) {
+        console.error("Update policy error:", error);
+        throw error;
+      }
     },
     onSuccess: () => {
       toast({
@@ -84,10 +147,11 @@ export default function PoliciesPage() {
       });
       queryClient.invalidateQueries({ queryKey: ["/api/policies"] });
     },
-    onError: (error) => {
+    onError: (error: any) => {
+      console.error("Update policy error details:", error);
       toast({
         title: "Failed to update policy",
-        description: error.message,
+        description: error.message || "Unknown error occurred",
         variant: "destructive",
       });
     },
@@ -139,8 +203,12 @@ export default function PoliciesPage() {
     // Convert categoryId from string to number for API
     const processedData = {
       ...data,
-      categoryId: parseInt(data.categoryId)
+      categoryId: parseInt(data.categoryId),
+      createdBy: user?.id // This is required by the schema and was missing
     };
+    
+    // Log the processed data to console for debugging
+    console.log("Submitting policy data:", processedData);
     
     if (selectedPolicy) {
       // Update existing policy
@@ -149,8 +217,12 @@ export default function PoliciesPage() {
         data: processedData,
       });
     } else {
-      // Create new policy
-      createPolicyMutation.mutate(processedData);
+      // Create new policy - add policyRef for new policies
+      const policyRefData = {
+        ...processedData,
+        policyRef: `POL-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`
+      };
+      createPolicyMutation.mutate(policyRefData);
     }
   };
   
