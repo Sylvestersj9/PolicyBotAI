@@ -3,8 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupAuth } from "./auth";
 // Import the Hugging Face implementation instead of OpenAI
-import { searchPoliciesWithAI as searchWithHuggingFace } from "./huggingface";
-import { searchPoliciesWithAI as searchWithOpenAI } from "./openai";
+import { searchPoliciesWithAI } from "./huggingface";
 import { 
   insertPolicySchema, 
   insertCategorySchema, 
@@ -317,22 +316,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Get all policies for searching
       const policies = await storage.getPolicies();
       
-      // Perform AI search with fallback mechanism
-      let searchResult;
-      try {
-        console.log("Attempting search with Hugging Face models");
-        searchResult = await searchWithHuggingFace(query, policies);
-        
-        // If there's an error from Hugging Face, try OpenAI as fallback
-        if (searchResult.error) {
-          console.log(`Hugging Face search returned error: ${searchResult.error}, trying OpenAI fallback`);
-          searchResult = await searchWithOpenAI(query, policies);
-        }
-      } catch (searchError) {
-        console.error("Error with Hugging Face search, falling back to OpenAI:", searchError);
-        // Use OpenAI as fallback
-        searchResult = await searchWithOpenAI(query, policies);
-      }
+      // Perform AI search with Hugging Face only (as requested)
+      console.log("Attempting search with Hugging Face models");
+      const searchResult = await searchPoliciesWithAI(query, policies);
       
       // Special handling for OpenAI API errors - we still store them but log them differently
       if (searchResult.error) {
@@ -607,23 +593,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const policies = await storage.getPolicies();
       console.log(`Found ${policies.length} policies to search through`);
       
-      // Perform AI search with fallback mechanism
+      // Perform AI search with Hugging Face only (as requested)
       console.log("Performing AI search...");
-      let searchResult;
-      try {
-        console.log("Attempting search with Hugging Face models");
-        searchResult = await searchWithHuggingFace(query, policies);
-        
-        // If there's an error from Hugging Face, try OpenAI as fallback
-        if (searchResult.error) {
-          console.log(`Hugging Face search returned error: ${searchResult.error}, trying OpenAI fallback`);
-          searchResult = await searchWithOpenAI(query, policies);
-        }
-      } catch (searchError) {
-        console.error("Error with Hugging Face search, falling back to OpenAI:", searchError);
-        // Use OpenAI as fallback
-        searchResult = await searchWithOpenAI(query, policies);
-      }
+      console.log("Attempting search with Hugging Face models");
+      const searchResult = await searchPoliciesWithAI(query, policies);
       console.log("AI search completed");
       
       // Special handling for OpenAI API errors
