@@ -5,9 +5,10 @@ import { Policy } from '@shared/schema';
 // Using API key allows access to more powerful models and higher rate limits
 const hf = new HfInference(process.env.HUGGINGFACE_API_KEY);
 
-// Default model to use for text generation
-// Using a more powerful model with API key
+// Fallback to a text-generation model if Meta-Llama-3 is not available
+// or if there are authentication issues
 const DEFAULT_MODEL = 'meta-llama/Meta-Llama-3-8B-Instruct';
+const FALLBACK_MODEL = 'mistralai/Mistral-7B-Instruct-v0.2';
 
 /**
  * Search through policies using Hugging Face's AI to find the most relevant information
@@ -57,16 +58,31 @@ Example response format:
 {"policyId": 2, "answer": "According to our policy...", "confidence": 0.85}
 [/INST]</s>`;
 
-    // Call the model
-    const response = await hf.textGeneration({
-      model: DEFAULT_MODEL,
-      inputs: prompt,
-      parameters: {
-        max_new_tokens: 500,
-        temperature: 0.3, // Low temperature for more deterministic output
-        return_full_text: false,
-      }
-    });
+    // Call the model with error handling and fallback
+    let response;
+    try {
+      response = await hf.textGeneration({
+        model: DEFAULT_MODEL,
+        inputs: prompt,
+        parameters: {
+          max_new_tokens: 500,
+          temperature: 0.3, // Low temperature for more deterministic output
+          return_full_text: false,
+        }
+      });
+    } catch (modelError) {
+      console.error("Error with primary model, trying fallback:", modelError);
+      // Try with fallback model
+      response = await hf.textGeneration({
+        model: FALLBACK_MODEL,
+        inputs: prompt,
+        parameters: {
+          max_new_tokens: 500,
+          temperature: 0.3,
+          return_full_text: false,
+        }
+      });
+    }
 
     let result;
     try {
@@ -151,15 +167,31 @@ Policy document:
 ${policyContent}
 [/INST]</s>`;
 
-    const response = await hf.textGeneration({
-      model: DEFAULT_MODEL,
-      inputs: prompt,
-      parameters: {
-        max_new_tokens: 500,
-        temperature: 0.2,
-        return_full_text: false,
-      }
-    });
+    // Call the model with error handling and fallback
+    let response;
+    try {
+      response = await hf.textGeneration({
+        model: DEFAULT_MODEL,
+        inputs: prompt,
+        parameters: {
+          max_new_tokens: 500,
+          temperature: 0.2,
+          return_full_text: false,
+        }
+      });
+    } catch (modelError) {
+      console.error("Error with primary model for analysis, trying fallback:", modelError);
+      // Try with fallback model
+      response = await hf.textGeneration({
+        model: FALLBACK_MODEL,
+        inputs: prompt,
+        parameters: {
+          max_new_tokens: 500,
+          temperature: 0.2,
+          return_full_text: false,
+        }
+      });
+    }
 
     let result;
     try {

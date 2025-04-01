@@ -61,16 +61,33 @@ export async function uploadBase64File(req: Request, res: Response) {
     
     // Determine if the data is base64 encoded
     let buffer: Buffer;
-    if (typeof fileData === 'string' && fileData.indexOf('base64,') !== -1) {
-      // If it's a data URL, extract the base64 part
-      const base64Data = fileData.split('base64,')[1];
-      buffer = Buffer.from(base64Data, 'base64');
-    } else if (typeof fileData === 'string') {
-      // If it's just a base64 string
-      buffer = Buffer.from(fileData, 'base64');
-    } else {
-      // If it's just text
-      buffer = Buffer.from(String(fileData));
+    try {
+      if (typeof fileData === 'string' && fileData.indexOf('base64,') !== -1) {
+        // If it's a data URL, extract the base64 part
+        const base64Data = fileData.split('base64,')[1];
+        buffer = Buffer.from(base64Data, 'base64');
+      } else if (typeof fileData === 'string') {
+        // If it's just a base64 string
+        try {
+          // Try base64 first
+          buffer = Buffer.from(fileData, 'base64');
+        } catch (e) {
+          // Fallback to plain text if base64 decode fails
+          console.log('Base64 decode failed, treating as plain text');
+          buffer = Buffer.from(fileData, 'utf-8');
+        }
+      } else {
+        // If it's just text
+        buffer = Buffer.from(String(fileData), 'utf-8');
+      }
+      
+      // Additional sanitization to handle encoding issues
+      // Convert to string and back to buffer to normalize encoding
+      const safeContent = buffer.toString('utf-8').replace(/\u0000/g, '');
+      buffer = Buffer.from(safeContent, 'utf-8');
+    } catch (error: any) {
+      console.error('Error decoding file data:', error);
+      throw new Error(`Failed to decode file data: ${error.message || 'Unknown error'}`);
     }
     
     // Write the file

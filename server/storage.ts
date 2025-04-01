@@ -520,8 +520,18 @@ export class DatabaseStorage implements IStorage {
       // Ensure description is not undefined (null is acceptable)
       const description = insertPolicy.description === undefined ? null : insertPolicy.description;
       
+      // Sanitize the content to avoid encoding issues
+      let content = insertPolicy.content;
+      if (content) {
+        // Replace any invalid UTF-8 characters with a standard replacement character
+        content = Buffer.from(content, 'utf-8').toString('utf-8');
+        // Additional cleaning of potential problematic characters
+        content = content.replace(/\u0000/g, ''); // Remove null bytes
+      }
+      
       const result = await this.db.insert(policies).values({
         ...insertPolicy,
+        content,
         description,
         // Ensure we have timestamps (should normally be handled by defaultNow(), but let's be safe)
         createdAt: new Date(),

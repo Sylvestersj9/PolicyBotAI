@@ -43,6 +43,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
   // Serve files from the uploads directory
   app.use("/uploads", requireAuth, express.static(path.join(process.cwd(), "uploads")));
+  
+  // API Key validation middleware for extension requests
+  const validateApiKey = async (req: Request, res: Response, next: NextFunction) => {
+    const apiKey = req.headers['x-api-key'] as string;
+    
+    if (!apiKey) {
+      return res.status(401).json({ message: "API key is required" });
+    }
+    
+    try {
+      const user = await storage.getUserByApiKey(apiKey);
+      
+      if (!user) {
+        return res.status(401).json({ message: "Invalid API key" });
+      }
+      
+      // Set the user in the request for later use
+      req.user = user;
+      next();
+    } catch (error) {
+      console.error("Error validating API key:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  };
 
   // Get all categories
   app.get("/api/categories", requireAuth, async (req, res) => {
@@ -474,31 +498,73 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  // Validate API key middleware
-  const validateApiKey = async (req: Request, res: Response, next: NextFunction) => {
-    const apiKey = req.headers['x-api-key'] as string;
-    
-    if (!apiKey) {
-      return res.status(401).json({ message: "API key is required" });
-    }
-    
+  // validateApiKey is already defined above
+
+  // Extension login endpoint
+  app.post("/api/extension/login", async (req, res) => {
     try {
-      // Find user by API key
-      const user = await storage.getUserByApiKey(apiKey);
+      console.log("Extension login request received");
       
-      if (!user) {
-        return res.status(401).json({ message: "Invalid API key" });
+      const { username, password } = req.body;
+      
+      if (!username || !password) {
+        return res.status(400).json({ message: "Username and password are required" });
       }
       
-      // Attach user to request
-      req.user = user;
-      next();
+      // Find user by username
+      const user = await storage.getUserByUsername(username);
+      
+      if (!user) {
+        return res.status(401).json({ message: "Invalid username or password" });
+      }
+      
+      // Import password checking function from auth.ts
+      const { comparePasswords } = require('./auth');
+      
+      // Verify password
+      const isPasswordValid = await comparePasswords(password, user.password);
+      
+      if (!isPasswordValid) {
+        return res.status(401).json({ message: "Invalid username or password" });
+      }
+      
+      // Generate API key if none exists
+      let apiKey = user.apiKey;
+      
+      if (!apiKey) {
+        console.log(`No API key found - generating new key for user: ${user.id}`);
+        apiKey = Array(30)
+          .fill(0)
+          .map(() => Math.random().toString(36).charAt(2))
+          .join('');
+        
+        // Update user with new API key
+        await storage.updateUserApiKey(user.id, apiKey);
+      }
+      
+      // Log activity
+      await storage.createActivity({
+        userId: user.id,
+        action: "extension_login",
+        resourceType: "user",
+        resourceId: user.id,
+        details: "Logged in via browser extension",
+      });
+      
+      // Return user data with API key (excluding password)
+      const { password: _, ...userData } = user;
+      
+      res.json({
+        success: true,
+        user: userData,
+        apiKey
+      });
     } catch (error) {
-      console.error("API key validation error:", error);
-      res.status(500).json({ message: "Failed to validate API key" });
+      console.error("Extension login error:", error);
+      res.status(500).json({ message: "Failed to process login", error: String(error) });
     }
-  };
-
+  });
+  
   // API endpoint for browser extension
   app.post("/api/extension/search", validateApiKey, async (req, res) => {
     try {
