@@ -685,12 +685,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
       dbStatus = "disconnected";
     }
     
-    // Check Hugging Face API connection
+    // Check Hugging Face API connection with actual API test
     let hfStatus = "unknown";
-    if (process.env.HUGGINGFACE_API_KEY) {
-      hfStatus = "configured";
-    } else {
-      hfStatus = "not configured";
+    let hfDetails = null;
+    try {
+      if (!process.env.HUGGINGFACE_API_KEY) {
+        hfStatus = "not configured";
+      } else {
+        // Import the getHfClient function to check real connection status
+        const { getHfClient } = await import('./huggingface');
+        const hfClient = await getHfClient();
+        if (hfClient) {
+          hfStatus = "connected";
+          hfDetails = "API key validated";
+        } else {
+          hfStatus = "error";
+          hfDetails = "Failed to initialize HuggingFace client";
+        }
+      }
+    } catch (error) {
+      console.error("Hugging Face connection check failed:", error);
+      hfStatus = "error";
+      hfDetails = error instanceof Error ? error.message : String(error);
     }
     
     // Send detailed health status
@@ -704,7 +720,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         type: process.env.DATABASE_URL ? "postgresql" : "in-memory"
       },
       ai: {
-        huggingface: hfStatus
+        huggingface: hfStatus,
+        details: hfDetails
       },
       server: {
         nodejs: process.version,

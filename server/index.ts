@@ -206,28 +206,82 @@ const httpServer = createServer(app);
 (async () => {
   try {
     console.log('Initializing server...');
-    // Wait for database connection and API route registration
-    await registerRoutes(app);
-    console.log('Routes registered successfully');
     
-    // Setup Vite for frontend
-    await setupVite(app, httpServer);
-    console.log('Vite frontend setup completed');
-    
-    // Start the server
-    httpServer.listen(port, '0.0.0.0', () => {
-      console.log(`Server is running on port ${port}`);
-      console.log(`Health check available at: http://localhost:${port}/health`);
-      console.log(`API health check available at: http://localhost:${port}/api/extension/health`);
+    // Handle process errors gracefully
+    process.on('uncaughtException', (err) => {
+      console.error('Uncaught exception:', err);
+      // Don't exit on uncaught exceptions in production - more stable for Replit
+      if (process.env.NODE_ENV !== 'production') {
+        process.exit(1);
+      }
+    });
+
+    process.on('unhandledRejection', (reason, promise) => {
+      console.error('Unhandled rejection at:', promise, 'reason:', reason);
     });
     
-    // Add shutdown handler
-    process.on('SIGTERM', () => {
-      console.log('SIGTERM signal received, shutting down gracefully');
-      httpServer.close(() => {
-        console.log('Server closed');
+    // Add more signals for graceful shutdown
+    const signals = ['SIGINT', 'SIGTERM', 'SIGUSR2'];
+    signals.forEach(signal => {
+      process.once(signal, () => {
+        console.log(`${signal} signal received, shutting down gracefully`);
+        // Give the server 5 seconds to close gracefully before forcing exit
+        let forceExitTimeout = setTimeout(() => {
+          console.log('Forcing server exit after timeout');
+          process.exit(1);
+        }, 5000);
+        
+        httpServer.close(() => {
+          console.log('Server closed successfully');
+          clearTimeout(forceExitTimeout);
+          process.exit(0);
+        });
       });
     });
+    
+    // Wait for database connection and API route registration
+    console.log('Registering routes and connecting to database...');
+    try {
+      await registerRoutes(app);
+      console.log('Routes registered successfully');
+    } catch (routeError) {
+      console.error('Failed to register routes:', routeError);
+      // Continue anyway to allow the server to start even with partial functionality
+    }
+    
+    // Setup Vite for frontend
+    try {
+      await setupVite(app, httpServer);
+      console.log('Vite frontend setup completed');
+    } catch (viteError) {
+      console.error('Non-critical Vite setup error (continuing):', viteError);
+      // Continue anyway to allow the API to work even if Vite has issues
+    }
+    
+    // Start the server with better Replit support
+    const host = process.env.NODE_ENV === 'production' ? '0.0.0.0' : 'localhost';
+    
+    // Add error handler for the HTTP server
+    httpServer.on('error', (err) => {
+      console.error('Server startup error:', err);
+      // If the port is in use, try another one
+      if ((err as NodeJS.ErrnoException).code === 'EADDRINUSE') {
+        console.log(`Port ${port} is in use, trying different port...`);
+        httpServer.listen(0, host); // Let the OS assign an available port
+      }
+    });
+    
+    // Handle successful startup
+    httpServer.on('listening', () => {
+      const address = httpServer.address();
+      const actualPort = typeof address === 'object' && address ? address.port : port;
+      console.log(`Server is running on ${host}:${actualPort}`);
+      console.log(`Health check available at: http://${host}:${actualPort}/health`);
+      console.log(`API health check available at: http://${host}:${actualPort}/api/extension/health`);
+    });
+    
+    // Start the HTTP server
+    httpServer.listen(port, host);
   } catch (error) {
     console.error('Failed to start server:', error);
     process.exit(1);
