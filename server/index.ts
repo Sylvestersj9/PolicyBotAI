@@ -10,7 +10,10 @@ import { setupVite } from "./vite";
 import { registerRoutes } from "./routes";
 
 const app = express();
-const port = 5000;
+const port = parseInt(process.env.PORT || '5000', 10); // Use PORT from environment if available
+
+// Trust proxy (needed for Replit deployment)
+app.set('trust proxy', 1);
 
 // Middleware for parsing JSON and URL-encoded data
 app.use(express.json());
@@ -88,8 +91,8 @@ registerRoutes(app).then(() => {
   // Setup Vite for frontend
   setupVite(app, httpServer).then(() => {
     // Start the server
-    httpServer.listen(port, '0.0.0.0', () => {
-      console.log(`Server is running on http://0.0.0.0:${port}`);
+    httpServer.listen(port, () => {
+      console.log(`Server is running on port ${port}`);
     });
   });
 });
