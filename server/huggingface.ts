@@ -3,7 +3,24 @@ import { Policy } from '@shared/schema';
 
 // Initialize the Hugging Face client with API key
 // Using API key allows access to more powerful models and higher rate limits
-const hf = new HfInference(process.env.HUGGINGFACE_API_KEY);
+let hf: HfInference;
+
+try {
+  // Check if API key is present before initializing
+  if (!process.env.HUGGINGFACE_API_KEY) {
+    console.error("CRITICAL ERROR: Missing HUGGINGFACE_API_KEY environment variable");
+    // Create a client without an API key, which will have limited functionality
+    hf = new HfInference();
+  } else {
+    // Initialize with the API key
+    hf = new HfInference(process.env.HUGGINGFACE_API_KEY);
+    console.log("HuggingFace client initialized successfully with API key");
+  }
+} catch (error) {
+  console.error("Error initializing HuggingFace client:", error);
+  // Create a fallback client that will at least allow the app to start
+  hf = new HfInference();
+}
 
 // Using the Mistral model as default - far more powerful than basic models
 // PRIMARY: Use Mistral model (instruction-tuned, powerful for complex reasoning)
@@ -31,8 +48,21 @@ export async function searchPoliciesWithAI(query: string, policies: Policy[]): P
   confidence: number;
   error?: string;
 }> {
+  // Log API key availability (without exposing the actual key)
+  console.log(`HuggingFace API Key configured: ${process.env.HUGGINGFACE_API_KEY ? 'YES' : 'NO'}`);
+  
   try {
+    if (!process.env.HUGGINGFACE_API_KEY) {
+      console.error("CRITICAL ERROR: Missing HUGGINGFACE_API_KEY environment variable");
+      return {
+        answer: "Unable to process request due to missing AI configuration. Please contact support.",
+        confidence: 1.0,
+        error: "missing_api_key"
+      };
+    }
+    
     if (!policies || policies.length === 0) {
+      console.log("No policies found in database for search");
       return {
         answer: "No policies found in the system. Please add some policies first.",
         confidence: 1.0

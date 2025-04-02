@@ -783,7 +783,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Ensure user is authenticated via API key validation
       if (!req.user) {
         console.log("No user found in request - API key validation failed");
-        return res.status(401).json({ message: "Unauthorized" });
+        return res.status(401).json({ 
+          success: false,
+          message: "Unauthorized or invalid API key"
+        });
       }
       
       console.log(`Processing search from user: ${req.user.id} (${req.user.username})`);
@@ -792,16 +795,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log(`Search query: "${query}"`);
       
       if (!query || typeof query !== 'string' || query.trim() === '') {
-        return res.status(400).json({ message: "Query is required" });
+        return res.status(400).json({ 
+          success: false,
+          message: "Query is required",
+          error: "missing_query"
+        });
       }
       
       // Get all policies for searching
       const policies = await storage.getPolicies();
       console.log(`Found ${policies.length} policies to search through`);
       
+      // Check if we have any policies at all
+      if (!policies || policies.length === 0) {
+        console.log("No policies found in database");
+        return res.status(200).json({
+          success: true,
+          answer: "This question does not appear to be addressed in any of the provided policies.",
+          confidence: 1.0
+        });
+      }
+      
       // Perform AI search with Hugging Face only (as requested)
       console.log("Performing AI search...");
       console.log("Attempting search with Hugging Face models");
+      
+      // Check for Hugging Face API key
+      if (!process.env.HUGGINGFACE_API_KEY) {
+        console.error("CRITICAL ERROR: Missing HUGGINGFACE_API_KEY environment variable");
+        // Still continue with keyword search
+      }
+      
       const searchResult = await searchPoliciesWithAI(query, policies);
       console.log("AI search completed");
       
