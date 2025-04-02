@@ -310,10 +310,77 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Failed to delete policy" });
     }
   });
+  
+  // Answer question about a specific policy
+  app.post("/api/policies/:id/answer", requireAuth, async (req, res) => {
+    try {
+      // Ensure user is authenticated
+      if (!req.user) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid policy ID" });
+      }
+      
+      const { question } = req.body;
+      if (!question || typeof question !== 'string' || question.trim() === '') {
+        return res.status(400).json({ message: "Question is required" });
+      }
+      
+      const policy = await storage.getPolicy(id);
+      if (!policy) {
+        return res.status(404).json({ message: "Policy not found" });
+      }
+      
+      if (!policy.content || policy.content.trim() === '') {
+        return res.status(400).json({ message: "Policy has no content to analyze" });
+      }
+      
+      // Import the answerPolicyQuestion function from document-processor
+      const { answerPolicyQuestion } = await import('./document-processor');
+      
+      // Use the AI to answer the question based on policy content
+      console.log(`Answering question about policy #${id}: "${question}"`);
+      const { answer, confidence } = await answerPolicyQuestion(question, policy.content);
+      
+      // Record the search query
+      await storage.createSearchQuery({
+        query: question,
+        userId: req.user.id,
+        result: JSON.stringify({ answer, confidence, policyId: id }),
+      });
+      
+      // Log activity
+      await storage.createActivity({
+        userId: req.user.id,
+        action: "question",
+        resourceType: "policy",
+        resourceId: id,
+        details: `Asked question about policy "${policy.title}": "${question.substring(0, 100)}${question.length > 100 ? '...' : ''}"`,
+      });
+      
+      res.json({
+        answer,
+        confidence,
+        policyId: id,
+        policyTitle: policy.title
+      });
+    } catch (error) {
+      console.error("Error answering policy question:", error);
+      res.status(500).json({ message: "Failed to answer question about policy" });
+    }
+  });
 
   // AI Search endpoint
   app.post("/api/search", requireAuth, async (req, res) => {
     try {
+      // Ensure user is authenticated
+      if (!req.user) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
       const { query } = req.body;
       
       if (!query || typeof query !== 'string' || query.trim() === '') {
@@ -393,6 +460,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get recent searches for current user
   app.get("/api/searches", requireAuth, async (req, res) => {
     try {
+      // Ensure user is authenticated
+      if (!req.user) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
       const searches = await storage.getSearchQueries(req.user.id);
       
       // Parse the stored JSON result for each search with error handling
@@ -530,7 +602,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       // Import password checking function from auth.ts
-      const { comparePasswords } = require('./auth');
+      const { comparePasswords } = await import('./auth');
       
       // Verify password
       const isPasswordValid = await comparePasswords(password, user.password);
@@ -576,6 +648,77 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
+  // Extension health check endpoint
+  app.get("/api/extension/health", (req, res) => {
+    console.log("Extension health check request received");
+    res.status(200).json({ 
+      status: "ok", 
+      message: "PolicyBot API is running",
+      timestamp: new Date().toISOString()
+    });
+  });
+  
+  // Test endpoint for answering policy questions with direct content (protected by API key)
+  app.post("/api/extension/ask-policy", validateApiKey, async (req, res) => {
+    try {
+      console.log("Extension direct policy question request received");
+      
+      // Ensure user is authenticated via API key validation
+      if (!req.user) {
+        console.log("No user found in request - API key validation failed");
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      const { question, policyContent } = req.body;
+      
+      if (!question || typeof question !== 'string' || question.trim() === '') {
+        return res.status(400).json({ message: "Question is required" });
+      }
+      
+      if (!policyContent || typeof policyContent !== 'string' || policyContent.trim() === '') {
+        return res.status(400).json({ message: "Policy content is required" });
+      }
+      
+      // Import the answerPolicyQuestion function
+      const { answerPolicyQuestion } = await import('./document-processor');
+      
+      console.log(`Processing policy question: "${question}"`);
+      
+      // Use the AI to answer the question
+      const { answer, confidence } = await answerPolicyQuestion(question, policyContent);
+      
+      // Record the search query
+      await storage.createSearchQuery({
+        query: question,
+        userId: req.user.id,
+        result: JSON.stringify({ answer, confidence }),
+      });
+      
+      // Log activity
+      await storage.createActivity({
+        userId: req.user.id,
+        action: "extension_direct_question",
+        resourceType: "policy",
+        details: `Asked direct question about policy content: "${question.substring(0, 100)}${question.length > 100 ? '...' : ''}"`,
+      });
+      
+      console.log("Sending answer to extension");
+      res.json({
+        answer,
+        confidence,
+        success: true
+      });
+    } catch (error) {
+      console.error("Error answering direct policy question:", error);
+      res.status(500).json({ 
+        message: "Failed to answer policy question",
+        answer: "An error occurred while processing your question. Please try again later.",
+        confidence: 0,
+        success: false
+      });
+    }
+  });
+
   // API endpoint for browser extension
   app.post("/api/extension/search", validateApiKey, async (req, res) => {
     try {
@@ -674,9 +817,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ message: "Unauthorized" });
       }
 
-      // Return user data without the password
-      const { password, ...userData } = req.user;
-      res.json(userData);
+      // User data from req.user already has password removed due to Express.User interface definition
+      res.json(req.user);
     } catch (error) {
       console.error("Error fetching user profile:", error);
       res.status(500).json({ message: "Failed to fetch user profile" });

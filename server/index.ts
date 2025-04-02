@@ -12,12 +12,18 @@ import { registerRoutes } from "./routes";
 const app = express();
 const port = parseInt(process.env.PORT || '5000', 10); // Use PORT from environment if available
 
-// Trust proxy (needed for Replit deployment)
-app.set('trust proxy', 1);
+// Configure server for Replit deployment
+app.set('trust proxy', true);
+app.enable('trust proxy');
 
 // Middleware for parsing JSON and URL-encoded data
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Add a health check endpoint
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
+});
 
 // Set up storage engine for multer
 const storage = multer.diskStorage({
