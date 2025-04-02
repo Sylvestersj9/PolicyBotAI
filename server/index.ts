@@ -45,10 +45,19 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   next();
 });
 
-// Force redirect to HTTPS in production (Replit deployment)
+// Ensure HTTPS is used in production on Replit
 app.use((req: Request, res: Response, next: NextFunction) => {
+  // For Replit deployments, trust x-forwarded-proto headers
+  const isReplit = !!process.env.REPL_SLUG;
+  const isProduction = process.env.NODE_ENV === 'production';
+  
   // Skip for localhost/development environments
   if (req.hostname === 'localhost' || req.hostname.includes('127.0.0.1')) {
+    return next();
+  }
+  
+  // Only apply in production environments
+  if (!isProduction && !isReplit) {
     return next();
   }
   
@@ -58,9 +67,9 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   }
   
   // Redirect to HTTPS
-  const httpsUrl = `https://${req.hostname}${req.originalUrl}`;
-  console.log(`Redirecting to HTTPS: ${httpsUrl}`);
-  res.redirect(301, httpsUrl);
+  const httpsUrl = `https://${req.headers.host || req.hostname}${req.originalUrl}`;
+  console.log(`[${new Date().toISOString()}] Redirecting to HTTPS: ${httpsUrl}`);
+  return res.redirect(301, httpsUrl);
 });
 
 // Error handling middleware (must be after all routes)

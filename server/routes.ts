@@ -112,6 +112,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   });
   
+  // Enhanced health check for debugging 502 errors
+  app.get('/api/debug', (req, res) => {
+    res.status(200).json({
+      status: 'ok',
+      message: 'Debug API endpoint working!',
+      timestamp: new Date().toISOString(),
+      headers: req.headers,
+      deployment: {
+        environment: process.env.NODE_ENV || 'development',
+        isReplit: !!process.env.REPL_SLUG,
+        replId: process.env.REPL_ID || null,
+        port: process.env.PORT || 'default',
+        protocol: req.protocol,
+        host: req.hostname,
+        ip: req.ip,
+        secure: req.secure
+      }
+    });
+  });
+  
   // Serve files from the uploads directory
   app.use("/uploads", requireAuth, express.static(path.join(process.cwd(), "uploads")));
   
@@ -767,6 +787,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   });
   
+  // Add a public no-auth endpoint for pure server validation - critical for 502 debugging
+  app.get('/api/noauth/health', (req, res) => {
+    res.status(200).json({
+      status: 'ok',
+      message: 'Server is accessible without authentication',
+      timestamp: new Date().toISOString(),
+      request: {
+        method: req.method,
+        path: req.path,
+        headers: req.headers,
+        ip: req.ip,
+        protocol: req.protocol,
+        secure: req.secure
+      },
+      server: {
+        nodejs: process.version,
+        memory: Math.round(process.memoryUsage().heapUsed / 1024 / 1024 * 100) / 100 + " MB",
+        uptime: Math.floor(process.uptime()) + " seconds"
+      }
+    });
+  });
+
   // Additional minimal test endpoint that ensures the basic functionality works
   // Use this to verify that the server is running correctly in Replit deployment
   app.get("/api/test", (req, res) => {
