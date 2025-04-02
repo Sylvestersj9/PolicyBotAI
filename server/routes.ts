@@ -71,6 +71,8 @@ const uploadSingleFile = (fieldName: string) => {
 // Auth middleware to check if the user is authenticated
 function requireAuth(req: Request, res: Response, next: NextFunction) {
   if (req.isAuthenticated && req.isAuthenticated() && req.user) {
+    // Using a type assertion to ensure TypeScript knows req.user is defined in subsequent middleware
+    (req as Request & { user: Express.User }).user;
     return next();
   }
   res.status(401).json({ message: "Unauthorized" });
@@ -169,6 +171,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Policy not found" });
       }
       
+      // TypeScript check to ensure req.user is defined (this will always be true due to requireAuth)
+      if (!req.user) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
       // Log activity
       await storage.createActivity({
         userId: req.user.id,
@@ -199,6 +206,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Create a new policy
   app.post("/api/policies", requireAuth, async (req, res) => {
     try {
+      // TypeScript check to ensure req.user is defined (this will always be true due to requireAuth)
+      if (!req.user) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
       const validData = insertPolicySchema.parse({
         ...req.body,
         createdBy: req.user.id,
@@ -240,6 +252,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Update a policy
   app.put("/api/policies/:id", requireAuth, async (req, res) => {
     try {
+      // TypeScript check to ensure req.user is defined (this will always be true due to requireAuth)
+      if (!req.user) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
       const id = parseInt(req.params.id);
       if (isNaN(id)) {
         return res.status(400).json({ message: "Invalid policy ID" });
@@ -280,6 +297,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Delete a policy
   app.delete("/api/policies/:id", requireAuth, async (req, res) => {
     try {
+      // TypeScript check to ensure req.user is defined (this will always be true due to requireAuth)
+      if (!req.user) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
       const id = parseInt(req.params.id);
       if (isNaN(id)) {
         return res.status(400).json({ message: "Invalid policy ID" });

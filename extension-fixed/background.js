@@ -3,7 +3,7 @@
 
 // Global state
 let apiKey = null;
-let apiBaseUrl = 'https://your-domain.com'; // Replace with your actual domain
+let apiBaseUrl = 'https://policybotai.replit.app'; // Default API URL
 
 // Load stored API key and URL when background script starts
 chrome.storage.local.get(['apiKey', 'apiBaseUrl', 'user'], (result) => {
