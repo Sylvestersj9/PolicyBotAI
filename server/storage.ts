@@ -4,7 +4,8 @@ import {
   policies, type Policy, type InsertPolicy,
   searchQueries, type SearchQuery, type InsertSearchQuery,
   activities, type Activity, type InsertActivity,
-  aiTraining, type AiTraining, type InsertAiTraining
+  aiTraining, type AiTraining, type InsertAiTraining,
+  documents, type Document, type InsertDocument
 } from "@shared/schema";
 import createMemoryStore from "memorystore";
 import session from "express-session";
@@ -27,7 +28,7 @@ export interface IStorage {
   updateUserApiKey(userId: number, apiKey: string): Promise<User | undefined>;
   updateUserProfile(userId: number, updates: Partial<Omit<InsertUser, 'password'>>): Promise<User | undefined>;
   updateUserPassword(userId: number, newPassword: string): Promise<User | undefined>;
-  updateUserProfilePicture(userId: number, profilePicture: string): Promise<User | undefined>;
+  updateUserProfilePicture(userId: number, profilePicture: string | null): Promise<User | undefined>;
   
   // Category operations
   getCategories(): Promise<Category[]>;
@@ -60,6 +61,15 @@ export interface IStorage {
   updateAiTrainingIsActive(id: number, isActive: boolean): Promise<AiTraining | undefined>;
   getLatestSuccessfulTraining(model: string): Promise<AiTraining | undefined>;
   
+  // Document operations
+  getDocuments(): Promise<Document[]>;
+  getDocument(id: number): Promise<Document | undefined>;
+  getDocumentsByUser(userId: number): Promise<Document[]>;
+  getDocumentsByPolicy(policyId: number): Promise<Document[]>;
+  createDocument(document: InsertDocument): Promise<Document>;
+  updateDocument(id: number, updates: Partial<InsertDocument>): Promise<Document | undefined>;
+  deleteDocument(id: number): Promise<boolean>;
+  
   // Session store
   sessionStore: any; // Using any as a workaround for SessionStore type issue
 }
@@ -72,6 +82,7 @@ export class MemStorage implements IStorage {
   private searchQueries: Map<number, SearchQuery>;
   private activities: Map<number, Activity>;
   private aiTrainings: Map<number, AiTraining>;
+  private documents: Map<number, Document>;
   
   userCurrentId: number;
   categoryCurrentId: number;
@@ -79,6 +90,7 @@ export class MemStorage implements IStorage {
   searchQueryCurrentId: number;
   activityCurrentId: number;
   aiTrainingCurrentId: number;
+  documentCurrentId: number;
   sessionStore: any; // Using any as a workaround for SessionStore type issue
 
   constructor() {
@@ -88,6 +100,7 @@ export class MemStorage implements IStorage {
     this.searchQueries = new Map();
     this.activities = new Map();
     this.aiTrainings = new Map();
+    this.documents = new Map();
     
     this.userCurrentId = 1;
     this.categoryCurrentId = 1;
@@ -95,6 +108,7 @@ export class MemStorage implements IStorage {
     this.searchQueryCurrentId = 1;
     this.activityCurrentId = 1;
     this.aiTrainingCurrentId = 1;
+    this.documentCurrentId = 1;
     
     this.sessionStore = new MemoryStore({
       checkPeriod: 86400000, // 24 hours
@@ -244,7 +258,7 @@ export class MemStorage implements IStorage {
     return updatedUser;
   }
   
-  async updateUserProfilePicture(userId: number, profilePicture: string): Promise<User | undefined> {
+  async updateUserProfilePicture(userId: number, profilePicture: string | null): Promise<User | undefined> {
     const user = this.users.get(userId);
     if (!user) return undefined;
     
@@ -415,8 +429,12 @@ export class MemStorage implements IStorage {
     
     // Create AiTraining record with proper policies array handling
     const training: AiTraining = {
-      ...insertTraining,
       id,
+      name: insertTraining.name,
+      model: insertTraining.model,
+      version: insertTraining.version,
+      description: insertTraining.description ?? null,
+      createdBy: insertTraining.createdBy,
       status: "pending",
       startedAt,
       completedAt: null,
@@ -425,7 +443,8 @@ export class MemStorage implements IStorage {
       progress: 0,
       isActive: false,
       policies: insertTraining.policies || null,
-      documentTypes: insertTraining.documentTypes || null
+      documentTypes: insertTraining.documentTypes || null,
+      trainingParams: insertTraining.trainingParams
     };
     
     this.aiTrainings.set(id, training);
@@ -483,6 +502,93 @@ export class MemStorage implements IStorage {
     
     // Return the most recent one
     return completedTrainings.length > 0 ? completedTrainings[0] : undefined;
+  }
+  
+  // Document operations
+  async getDocuments(): Promise<Document[]> {
+    return Array.from(this.documents.values())
+      .sort((a, b) => {
+        // Most recent first
+        const aTime = a.createdAt?.getTime() ?? 0;
+        const bTime = b.createdAt?.getTime() ?? 0;
+        return bTime - aTime;
+      });
+  }
+  
+  async getDocument(id: number): Promise<Document | undefined> {
+    return this.documents.get(id);
+  }
+  
+  async getDocumentsByUser(userId: number): Promise<Document[]> {
+    return Array.from(this.documents.values())
+      .filter((document) => document.uploadedBy === userId)
+      .sort((a, b) => {
+        // Most recent first
+        const aTime = a.createdAt?.getTime() ?? 0;
+        const bTime = b.createdAt?.getTime() ?? 0;
+        return bTime - aTime;
+      });
+  }
+  
+  async getDocumentsByPolicy(policyId: number): Promise<Document[]> {
+    return Array.from(this.documents.values())
+      .filter((document) => document.policyId === policyId)
+      .sort((a, b) => {
+        // Most recent first
+        const aTime = a.createdAt?.getTime() ?? 0;
+        const bTime = b.createdAt?.getTime() ?? 0;
+        return bTime - aTime;
+      });
+  }
+  
+  async createDocument(insertDocument: InsertDocument): Promise<Document> {
+    const id = this.documentCurrentId++;
+    const createdAt = new Date();
+    const updatedAt = new Date();
+    
+    // Ensure optional fields are non-undefined (null is acceptable)
+    const summary = insertDocument.summary === undefined ? null : insertDocument.summary;
+    const extractedText = insertDocument.extractedText === undefined ? null : insertDocument.extractedText;
+    const keyPoints = insertDocument.keyPoints === undefined ? null : insertDocument.keyPoints;
+    const policyId = insertDocument.policyId === undefined ? null : insertDocument.policyId;
+    
+    const document: Document = {
+      id,
+      title: insertDocument.title,
+      fileName: insertDocument.fileName,
+      filePath: insertDocument.filePath,
+      fileType: insertDocument.fileType,
+      fileSize: insertDocument.fileSize,
+      uploadedBy: insertDocument.uploadedBy,
+      status: insertDocument.status || "pending",
+      createdAt,
+      updatedAt,
+      extractedText,
+      summary,
+      keyPoints,
+      policyId,
+      processingError: null
+    };
+    
+    this.documents.set(id, document);
+    return document;
+  }
+  
+  async updateDocument(id: number, updates: Partial<InsertDocument>): Promise<Document | undefined> {
+    const document = this.documents.get(id);
+    if (!document) return undefined;
+    
+    const updatedDocument: Document = {
+      ...document,
+      ...updates
+    };
+    
+    this.documents.set(id, updatedDocument);
+    return updatedDocument;
+  }
+  
+  async deleteDocument(id: number): Promise<boolean> {
+    return this.documents.delete(id);
   }
 }
 
@@ -644,7 +750,7 @@ export class DatabaseStorage implements IStorage {
     return result[0];
   }
   
-  async updateUserProfilePicture(userId: number, profilePicture: string): Promise<User | undefined> {
+  async updateUserProfilePicture(userId: number, profilePicture: string | null): Promise<User | undefined> {
     const result = await this.db.update(users)
       .set({ profilePicture })
       .where(eq(users.id, userId))
@@ -789,7 +895,11 @@ export class DatabaseStorage implements IStorage {
   
   async createAiTraining(insertTraining: InsertAiTraining): Promise<AiTraining> {
     const result = await this.db.insert(aiTraining).values({
-      ...insertTraining,
+      name: insertTraining.name,
+      model: insertTraining.model,
+      version: insertTraining.version,
+      description: insertTraining.description ?? null,
+      createdBy: insertTraining.createdBy,
       status: "pending",
       startedAt: new Date(),
       completedAt: null,
@@ -798,7 +908,8 @@ export class DatabaseStorage implements IStorage {
       progress: 0,
       isActive: false,
       policies: insertTraining.policies || null,
-      documentTypes: insertTraining.documentTypes || null
+      documentTypes: insertTraining.documentTypes || null,
+      trainingParams: insertTraining.trainingParams
     }).returning();
     
     return result[0];
@@ -851,6 +962,64 @@ export class DatabaseStorage implements IStorage {
       .limit(1);
     
     return result[0];
+  }
+  
+  // Document operations
+  async getDocuments(): Promise<Document[]> {
+    return await this.db.select().from(documents)
+      .orderBy(desc(documents.createdAt));
+  }
+  
+  async getDocument(id: number): Promise<Document | undefined> {
+    const result = await this.db.select().from(documents).where(eq(documents.id, id));
+    return result[0];
+  }
+  
+  async getDocumentsByUser(userId: number): Promise<Document[]> {
+    return await this.db.select().from(documents)
+      .where(eq(documents.uploadedBy, userId))
+      .orderBy(desc(documents.createdAt));
+  }
+  
+  async getDocumentsByPolicy(policyId: number): Promise<Document[]> {
+    return await this.db.select().from(documents)
+      .where(eq(documents.policyId, policyId))
+      .orderBy(desc(documents.createdAt));
+  }
+  
+  async createDocument(insertDocument: InsertDocument): Promise<Document> {
+    const result = await this.db.insert(documents).values({
+      title: insertDocument.title,
+      fileName: insertDocument.fileName,
+      filePath: insertDocument.filePath,
+      fileType: insertDocument.fileType,
+      fileSize: insertDocument.fileSize,
+      uploadedBy: insertDocument.uploadedBy,
+      extractedText: insertDocument.extractedText ?? null,
+      summary: insertDocument.summary ?? null,
+      keyPoints: insertDocument.keyPoints ?? null,
+      policyId: insertDocument.policyId ?? null,
+      status: insertDocument.status ?? "pending",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      processingError: null
+    }).returning();
+    
+    return result[0];
+  }
+  
+  async updateDocument(id: number, updates: Partial<InsertDocument>): Promise<Document | undefined> {
+    const result = await this.db.update(documents)
+      .set(updates)
+      .where(eq(documents.id, id))
+      .returning();
+      
+    return result[0];
+  }
+  
+  async deleteDocument(id: number): Promise<boolean> {
+    const result = await this.db.delete(documents).where(eq(documents.id, id)).returning();
+    return result.length > 0;
   }
 }
 

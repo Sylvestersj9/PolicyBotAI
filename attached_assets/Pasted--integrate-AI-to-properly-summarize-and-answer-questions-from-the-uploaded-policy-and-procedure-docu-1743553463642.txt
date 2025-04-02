@@ -1,0 +1,73 @@
+ integrate AI to properly summarize and answer questions from the uploaded policy and procedure documents in your web app, you can follow these steps:
+
+1. Set Up File Uploading and Extraction
+Since you've already implemented file uploads (e.g., PDFs, DOCs), ensure your web app is correctly handling and extracting text from these files.
+
+For PDFs: Use a package like pdf-parse to extract text from uploaded PDFs.
+
+For DOCX files: Use mammoth or docx to extract text from Word documents.
+
+Ensure the text extraction works as expected and is stored in your database after a user uploads a document.
+
+2. Integrate AI to Process Extracted Text
+Once you have the text extracted from the documents, you can integrate a simple AI model that will summarize the text and answer questions based on that text.
+
+Steps for AI Integration:
+Summarization: You can use an AI-based NLP service, like OpenAI's GPT, or use Hugging Face models to generate summaries.
+
+You can fine-tune the model to summarize long policy documents effectively.
+
+Question Answering: Once the document is processed, you can use the model to answer questions like: “What is the purpose of this policy?” or “What are the main points of this procedure?”
+
+3. Building the AI Functionality
+You can create a function in your backend (Node.js, for example) to send the extracted text to an AI API (like OpenAI or Hugging Face).
+
+Here’s an overview of how to send text to AI for processing:
+
+typescript
+Copy
+Edit
+import axios from 'axios';
+
+async function sendToAI(text: string) {
+  const apiKey = 'your-api-key';
+  const response = await axios.post('https://api.openai.com/v1/completions', {
+    model: 'text-davinci-003', // or any other suitable model
+    prompt: `Summarize the following policy:\n\n${text}`,
+    max_tokens: 200,  // Adjust as per the required length
+    temperature: 0.7,
+  }, {
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+  });
+
+  return response.data.choices[0].text.trim();
+}
+4. Integrate AI Summarization in Your Upload Flow
+After extracting text from uploaded files, pass that text into the sendToAI function.
+
+Store the AI’s response (summary) along with the file in your database.
+
+When users ask questions about their policies, you can use the stored summary or processed content to answer those queries.
+
+5. Frontend UI Integration
+Allow users to view the summarized content in the UI after the AI processes their uploaded documents.
+
+Implement a simple search box where users can input questions, and the AI can provide relevant answers based on the summarized content.
+
+Summary Flow:
+User uploads a document (PDF or DOCX).
+
+Text is extracted from the document and stored.
+
+The extracted text is sent to the AI model for summarization.
+
+The summary is stored alongside the document.
+
+Users can ask questions related to the policy, and the AI answers based on the summary or full document.
+
+6. Testing and Deployment
+Test the AI's performance on a variety of policies to ensure the answers are accurate. Adjust the prompt or AI model parameters if needed.
+

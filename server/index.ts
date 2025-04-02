@@ -1,121 +1,95 @@
-import express, { type Request, Response, NextFunction } from "express";
+import express, { Request, Response, NextFunction } from "express";
+import multer from "multer";
+import path from "path";
+import fs from "fs";
+import { createServer } from "http";
+import pdfParse from "pdf-parse";
+import mammoth from "mammoth";
+import { sendToAI } from "./aiService"; // This is where your AI processing logic will go (replace with actual path)
+import { setupVite } from "./vite";
 import { registerRoutes } from "./routes";
-import { setupVite, serveStatic, log } from "./vite";
-import cors from 'cors';
-
-// Debug request sizes
-function logRequestSize(req: Request, res: Response, next: NextFunction) {
-  const contentLength = req.headers['content-length'] ? 
-    parseInt(req.headers['content-length']) : 0;
-  
-  const contentType = req.headers['content-type'] || 'unknown';
-  
-  if (contentLength > 1000000) { // Log if over ~1MB
-    console.log(`LARGE REQUEST: ${req.method} ${req.path} - Size: ${(contentLength/1024/1024).toFixed(2)}MB, Type: ${contentType}`);
-  }
-  
-  next();
-}
 
 const app = express();
+const port = 5000;
 
-// Configure CORS for cross-origin requests from Chrome extension
-app.use(cors({
-  origin: true, // Allow all origins
-  credentials: true, // Allow cookies to be sent with requests
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Accept', 'X-API-Key', 'Authorization', 'Origin', 'X-Requested-With', 'Access-Control-Allow-Origin', 'Access-Control-Allow-Credentials'],
-  exposedHeaders: ['Set-Cookie', 'Date', 'ETag'],
-  maxAge: 3600 // Cache preflight request for 1 hour
-}));
+// Middleware for parsing JSON and URL-encoded data
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-// Additional CORS headers for extension requests
-app.use((req, res, next) => {
-  // For extension endpoints, be extra permissive
-  if (req.path.includes('/api/extension/')) {
-    console.log(`CORS for extension endpoint: ${req.path}`);
-    res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
-    res.header('Access-Control-Allow-Credentials', 'true');
+// Set up storage engine for multer
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, 'uploads/'); // Specify the folder to store uploaded files
+  },
+  filename: (req, file, cb) => {
+    cb(null, Date.now() + path.extname(file.originalname)); // Give the file a unique name
   }
-  next();
 });
 
-// Add request logging middleware
-app.use(logRequestSize);
+// Initialize multer with the storage configuration
+const upload = multer({ storage });
 
-// Configure express to handle large payloads (100MB limit)
-app.use(express.json({ 
-  limit: '100mb',
-  verify: (req, res, buf, encoding) => {
-    console.log(`JSON body size: ${buf.length} bytes`);
-  }
-}));
+// Create an upload endpoint
+app.post('/upload', upload.single('file'), (req: Request, res: Response) => {
+  if (req.file) {
+    const filePath = req.file.path; // Get the file path from the uploaded file
 
-app.use(express.urlencoded({ 
-  extended: true, 
-  limit: '100mb',
-  parameterLimit: 50000
-}));
-
-app.use((req, res, next) => {
-  const start = Date.now();
-  const path = req.path;
-  let capturedJsonResponse: Record<string, any> | undefined = undefined;
-
-  const originalResJson = res.json;
-  res.json = function (bodyJson, ...args) {
-    capturedJsonResponse = bodyJson;
-    return originalResJson.apply(res, [bodyJson, ...args]);
-  };
-
-  res.on("finish", () => {
-    const duration = Date.now() - start;
-    if (path.startsWith("/api")) {
-      let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-      if (capturedJsonResponse) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
-      }
-
-      if (logLine.length > 80) {
-        logLine = logLine.slice(0, 79) + "…";
-      }
-
-      log(logLine);
+    // Check file type and process accordingly
+    if (req.file.mimetype === "application/pdf") {
+      handlePdf(filePath, res); // Process PDF file
+    } else if (req.file.mimetype === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
+      handleDocx(filePath, res); // Process DOCX file
+    } else {
+      res.status(400).send({ message: 'Unsupported file type' });
     }
-  });
-
-  next();
+  } else {
+    res.status(400).send({ message: 'No file uploaded' });
+  }
 });
 
-(async () => {
-  const server = await registerRoutes(app);
+// Handle PDF file
+const handlePdf = (filePath: string, res: Response) => {
+  fs.readFile(filePath, (err, data) => {
+    if (err) return res.status(500).send('Error reading PDF file.');
 
-  app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
-    const status = err.status || err.statusCode || 500;
-    const message = err.message || "Internal Server Error";
-
-    res.status(status).json({ message });
-    throw err;
+    pdfParse(data).then((doc) => {
+      sendToAI(doc.text, res); // Send extracted text to AI
+    }).catch((error) => {
+      res.status(500).send('Error parsing PDF.');
+    });
   });
+};
 
-  // importantly only setup vite in development and after
-  // setting up all the other routes so the catch-all route
-  // doesn't interfere with the other routes
-  if (app.get("env") === "development") {
-    await setupVite(app, server);
-  } else {
-    serveStatic(app);
+// Handle DOCX file
+const handleDocx = (filePath: string, res: Response) => {
+  fs.readFile(filePath, (err, data) => {
+    if (err) return res.status(500).send('Error reading DOCX file.');
+
+    mammoth.extractRawText({ buffer: data }).then((result) => {
+      sendToAI(result.value, res); // Send extracted text to AI
+    }).catch((error) => {
+      res.status(500).send('Error parsing DOCX.');
+    });
+  });
+};
+
+// Create directories if they don't exist
+['uploads', 'public/uploads'].forEach(dir => {
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
   }
+});
 
-  // ALWAYS serve the app on port 5000
-  // this serves both the API and the client.
-  // It is the only port that is not firewalled.
-  const port = 5000;
-  server.listen({
-    port,
-    host: "0.0.0.0",
-    reusePort: true,
-  }, () => {
-    log(`serving on port ${port}`);
+// Create HTTP server
+const httpServer = createServer(app);
+
+// Register API routes
+registerRoutes(app).then(() => {
+  // Setup Vite for frontend
+  setupVite(app, httpServer).then(() => {
+    // Start the server
+    httpServer.listen(port, '0.0.0.0', () => {
+      console.log(`Server is running on http://0.0.0.0:${port}`);
+    });
   });
-})();
+});

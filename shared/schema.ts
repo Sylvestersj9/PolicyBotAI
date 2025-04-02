@@ -143,3 +143,39 @@ export type Activity = typeof activities.$inferSelect;
 
 export type InsertAiTraining = z.infer<typeof insertAiTrainingSchema>;
 export type AiTraining = typeof aiTraining.$inferSelect;
+
+// Document model
+export const documents = pgTable("documents", {
+  id: serial("id").primaryKey(),
+  title: text("title").notNull(),
+  fileName: text("file_name").notNull(),
+  filePath: text("file_path").notNull(),
+  fileType: text("file_type").notNull(), // pdf, docx, etc.
+  fileSize: integer("file_size").notNull(),
+  extractedText: text("extracted_text"),
+  summary: text("summary"),
+  keyPoints: text("key_points").array(),
+  uploadedBy: integer("uploaded_by").notNull(),
+  policyId: integer("policy_id"), // Optional link to a policy
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  status: text("status").notNull().default("pending"), // pending, processed, error
+  processingError: text("processing_error"),
+});
+
+export const insertDocumentSchema = createInsertSchema(documents).pick({
+  title: true,
+  fileName: true,
+  filePath: true,
+  fileType: true,
+  fileSize: true,
+  extractedText: true,
+  summary: true,
+  keyPoints: true,
+  uploadedBy: true,
+  policyId: true,
+  status: true,
+});
+
+export type InsertDocument = z.infer<typeof insertDocumentSchema>;
+export type Document = typeof documents.$inferSelect;

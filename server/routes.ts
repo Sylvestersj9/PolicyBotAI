@@ -4,6 +4,7 @@ import { storage } from "./storage";
 import { setupAuth } from "./auth";
 // Import the Hugging Face implementation instead of OpenAI
 import { searchPoliciesWithAI } from "./huggingface";
+import multer from "multer";
 import { 
   insertPolicySchema, 
   insertCategorySchema, 
@@ -13,9 +14,10 @@ import {
   insertUserSchema
 } from "@shared/schema";
 import { z } from "zod";
-import { uploadSingleFile, processUploadedFile } from "./upload";
-import { uploadBase64File } from "./direct-upload";
+import { setupUploadRoutes } from "./upload";
+import { setupDirectUploadRoutes } from "./direct-upload";
 import path from "path";
+import fs from "fs";
 
 // Extend Express.Request interface to include the user and file properties
 declare global {
@@ -29,6 +31,42 @@ declare global {
 }
 
 // We're now using our dedicated upload module instead of configuring multer here
+
+// Configure multer for single file uploads (like profile pictures)
+const uploadStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const uploadsDir = path.join(process.cwd(), 'uploads', 'profiles');
+    // Create directory if it doesn't exist
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true });
+    }
+    cb(null, uploadsDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const ext = path.extname(file.originalname);
+    cb(null, 'profile-' + uniqueSuffix + ext);
+  }
+});
+
+// Function for handling single file uploads
+const uploadSingleFile = (fieldName: string) => {
+  return multer({ 
+    storage: uploadStorage,
+    limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+    fileFilter: (req, file, cb) => {
+      // Only allow image files
+      const allowedTypes = ['.jpg', '.jpeg', '.png', '.gif'];
+      const ext = path.extname(file.originalname).toLowerCase();
+      
+      if (allowedTypes.includes(ext)) {
+        cb(null, true);
+      } else {
+        cb(new Error('Only JPG, PNG, and GIF files are allowed'));
+      }
+    }
+  }).single(fieldName);
+};
 
 // Auth middleware to check if the user is authenticated
 function requireAuth(req: Request, res: Response, next: NextFunction) {
@@ -146,42 +184,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Handle file upload for policies using our dedicated middleware
-  app.post("/api/upload-policy-file", requireAuth, uploadSingleFile('file'), async (req, res) => {
-    try {
-      // The uploadSingleFile middleware has already saved the file to disk
-      // and validated its size. Now we need to extract the content.
-      const filePath = req.file?.path;
-      
-      if (!filePath) {
-        return res.status(400).json({ message: "No file uploaded" });
-      }
-      
-      // Process the uploaded file
-      return processUploadedFile(req, res);
-    } catch (error) {
-      console.error("File upload error:", error);
-      res.status(500).json({ message: "Failed to process uploaded file" });
-    }
-  });
+  // Setup document upload routes
+  setupUploadRoutes(app);
   
-  // Alternative upload endpoint with disk storage for larger files
-  app.post("/api/upload-file-disk", requireAuth, uploadSingleFile('file'), (req, res) => {
-    try {
-      processUploadedFile(req, res);
-    } catch (error: any) {
-      console.error("File upload error:", error);
-      res.status(500).json({ 
-        message: "Failed to process uploaded file",
-        error: error.message || "Unknown error"
-      });
-    }
-  });
-  
-  // Direct upload endpoint using base64 encoding instead of multipart/form-data
-  app.post("/api/direct-upload", requireAuth, (req, res) => {
-    uploadBase64File(req, res);
-  });
+  // Setup direct upload routes for the API
+  setupDirectUploadRoutes(app);
   
   // Serve files from the public/uploads directory without auth for testing
   app.use("/public/uploads", express.static(path.join(process.cwd(), "public", "uploads")));
@@ -775,48 +782,72 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  // Upload profile picture
-  app.post("/api/user/profile-picture", requireAuth, uploadSingleFile('profilePicture'), async (req, res) => {
-    try {
-      if (!req.user) {
-        return res.status(401).json({ message: "Unauthorized" });
+  // Upload profile picture using multer middleware directly
+  app.post("/api/user/profile-picture", requireAuth, (req, res) => {
+    // Use our uploadSingleFile function defined above
+    const upload = multer({ 
+      storage: uploadStorage,
+      limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+      fileFilter: (req, file, cb) => {
+        // Only allow image files
+        const allowedTypes = ['.jpg', '.jpeg', '.png', '.gif'];
+        const ext = path.extname(file.originalname).toLowerCase();
+        
+        if (allowedTypes.includes(ext)) {
+          cb(null, true);
+        } else {
+          cb(new Error('Only JPG, PNG, and GIF files are allowed'));
+        }
       }
-      
-      if (!req.file) {
-        return res.status(400).json({ message: "No file uploaded" });
+    }).single('profilePicture');
+
+    upload(req, res, async (err) => {
+      if (err) {
+        console.error("Error uploading file:", err);
+        return res.status(400).json({ message: err.message });
       }
-      
-      // Get the file path
-      const filePath = req.file.path;
-      
-      // Normalize path for database storage
-      const normalizedPath = filePath.replace(/^.*[\\\/]uploads[\\\/]/, '/uploads/');
-      
-      // Update the user's profile picture
-      const updatedUser = await storage.updateUserProfilePicture(req.user.id, normalizedPath);
-      
-      if (!updatedUser) {
-        return res.status(404).json({ message: "User not found" });
+
+      try {
+        if (!req.user) {
+          return res.status(401).json({ message: "Unauthorized" });
+        }
+        
+        if (!req.file) {
+          return res.status(400).json({ message: "No file uploaded" });
+        }
+        
+        // Get the file path
+        const filePath = req.file.path;
+        
+        // Normalize path for database storage
+        const normalizedPath = filePath.replace(/^.*[\\\/]uploads[\\\/]/, '/uploads/');
+        
+        // Update the user's profile picture
+        const updatedUser = await storage.updateUserProfilePicture(req.user.id, normalizedPath);
+        
+        if (!updatedUser) {
+          return res.status(404).json({ message: "User not found" });
+        }
+        
+        // Log activity
+        await storage.createActivity({
+          userId: req.user.id,
+          action: "updated",
+          resourceType: "user",
+          resourceId: req.user.id,
+          details: "Updated profile picture"
+        });
+        
+        // Return the updated profile picture path
+        res.json({ 
+          message: "Profile picture updated successfully",
+          profilePicture: updatedUser.profilePicture 
+        });
+      } catch (error) {
+        console.error("Error uploading profile picture:", error);
+        res.status(500).json({ message: "Failed to upload profile picture" });
       }
-      
-      // Log activity
-      await storage.createActivity({
-        userId: req.user.id,
-        action: "updated",
-        resourceType: "user",
-        resourceId: req.user.id,
-        details: "Updated profile picture"
-      });
-      
-      // Return the updated profile picture path
-      res.json({ 
-        message: "Profile picture updated successfully",
-        profilePicture: updatedUser.profilePicture 
-      });
-    } catch (error) {
-      console.error("Error uploading profile picture:", error);
-      res.status(500).json({ message: "Failed to upload profile picture" });
-    }
+    });
   });
   
   // Delete profile picture
@@ -1039,6 +1070,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Failed to fetch latest AI training" });
     }
   });
+
+  // Create uploads directory if it doesn't exist
+  const uploadsDir = path.join(process.cwd(), 'uploads');
+  if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+  }
 
   const httpServer = createServer(app);
   return httpServer;

@@ -1,0 +1,166 @@
+Build an AI Function for Summarizing and Answering Questions from Policy Documents
+
+1. Requirements:
+I need a function that processes user-uploaded PDF, DOCX, or TXT files, extracts the text from these documents, and then uses AI (e.g., OpenAI’s GPT or Hugging Face) to summarize the document.
+
+The AI should also be able to answer specific questions related to the content of the documents (e.g., "What is the purpose of this policy?").
+
+The summary and extracted text should be stored in the database, and the AI should answer questions based on this stored data.
+
+2. Steps for File Processing:
+A. File Upload Handling:
+Users will upload PDF, DOCX, or TXT files.
+
+I already have the file upload setup using Multer (for Express).
+
+The files should be stored in the uploads/ directory.
+
+B. Text Extraction from Files:
+For PDFs, use the pdf-parse package to extract the text.
+
+For DOCX files, use the mammoth package to extract the text.
+
+For TXT files, simply read the file contents directly.
+
+Example Code for File Extraction:
+typescript
+Copy
+Edit
+import pdfParse from 'pdf-parse';
+import mammoth from 'mammoth';
+import fs from 'fs';
+
+// Function to handle file extraction
+async function extractTextFromFile(filePath: string, fileType: string) {
+  const fileBuffer = fs.readFileSync(filePath);
+  
+  if (fileType === 'pdf') {
+    const data = await pdfParse(fileBuffer);
+    return data.text; // Returns the extracted text from PDF
+  } else if (fileType === 'docx') {
+    const { value } = await mammoth.extractRawText({ buffer: fileBuffer });
+    return value; // Returns the extracted text from DOCX
+  } else if (fileType === 'txt') {
+    return fileBuffer.toString(); // Returns the text directly from TXT file
+  } else {
+    throw new Error('Unsupported file type');
+  }
+}
+3. AI Interaction:
+A. Summarization via OpenAI API:
+The extracted text will be sent to OpenAI's API (GPT-3, text-davinci-003 model) to summarize the document.
+
+The AI will also answer specific questions based on the document text (e.g., "What is the purpose of this policy?").
+
+You will need to pass the extracted document text into the AI’s API and format the request properly.
+
+Example Code for AI Summarization:
+typescript
+Copy
+Edit
+import axios from 'axios';
+
+async function summarizeTextWithAI(text: string) {
+  const apiKey = 'YOUR_OPENAI_API_KEY';
+  const prompt = `Summarize the following policy document:\n\n${text}`;
+  
+  const response = await axios.post('https://api.openai.com/v1/completions', {
+    model: 'text-davinci-003',  // Or another suitable model like GPT-4
+    prompt: prompt,
+    max_tokens: 500,  // Adjust as per the required summary length
+    temperature: 0.7,
+  }, {
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+  });
+
+  return response.data.choices[0].text.trim(); // Return the summarized text
+}
+B. Answering Specific Questions:
+Use the OpenAI API to answer specific questions based on the extracted document text.
+
+Example query: "What is the purpose of this policy?".
+
+AI will return an answer based on the content of the document.
+
+Example Code for Question Answering:
+typescript
+Copy
+Edit
+async function answerQuestionFromAI(text: string, question: string) {
+  const apiKey = 'YOUR_OPENAI_API_KEY';
+  const prompt = `Based on the following policy document, answer the question:\n\n${text}\n\nQuestion: ${question}\nAnswer:`;
+
+  const response = await axios.post('https://api.openai.com/v1/completions', {
+    model: 'text-davinci-003',
+    prompt: prompt,
+    max_tokens: 200,
+    temperature: 0.7,
+  }, {
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+  });
+
+  return response.data.choices[0].text.trim(); // Return the answer to the question
+}
+4. Database Integration:
+After summarizing the document and processing the question-answer pairs, save the AI responses (summaries and answers) to your database.
+
+Create a schema for storing the uploaded file, extracted text, AI summary, and related answers.
+
+You can store this data in a NoSQL database (e.g., MongoDB) or SQL (PostgreSQL/MySQL).
+
+Example Code for Saving to Database (MongoDB):
+typescript
+Copy
+Edit
+import { MongoClient } from 'mongodb';
+
+const client = new MongoClient('mongodb://localhost:27017');
+await client.connect();
+const db = client.db('policyApp');
+const policiesCollection = db.collection('policies');
+
+async function savePolicyToDatabase(filePath: string, summary: string, text: string) {
+  const policyDocument = {
+    filePath,
+    summary,
+    text,
+    uploadedAt: new Date(),
+  };
+
+  const result = await policiesCollection.insertOne(policyDocument);
+  console.log('Policy document saved:', result);
+}
+5. Frontend Integration:
+On the frontend, after users upload their files, allow them to view the AI-generated summary.
+
+Also, create a UI to ask specific questions related to their uploaded policies.
+
+Display the AI-generated answers directly on the UI.
+
+Expected Flow in Your Web App:
+User Uploads Document: User uploads a policy document (PDF/DOCX/TXT).
+
+Text Extraction: The system extracts text from the uploaded file.
+
+Summarization: The extracted text is sent to the AI model for summarization.
+
+Database Save: The document, summary, and any relevant information are stored in the database.
+
+User Query: The user can then ask a specific question about the policy.
+
+Answer Generation: The AI answers the user's question based on the document text.
+
+Display Results: The answer is displayed to the user on the frontend.
+
+Things to Ensure:
+Error Handling: Make sure the AI API interactions handle errors gracefully (e.g., network errors, API rate limits).
+
+Security: Ensure that API keys and sensitive data are not exposed.
+
+Performance: Optimize for large documents and ensure the system can handle multiple concurrent users and document uploads efficiently.

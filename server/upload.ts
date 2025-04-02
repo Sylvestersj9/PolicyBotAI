@@ -1,139 +1,291 @@
+import express from 'express';
 import multer from 'multer';
-import { Request, Response, NextFunction } from 'express';
-import * as fs from 'fs';
-import * as path from 'path';
-import * as crypto from 'crypto';
+import path from 'path';
+import fs from 'fs';
+import { storage } from './storage';
+import { extractTextFromFile, summarizePolicy } from './document-processor';
+import { InsertDocument } from '@shared/schema';
 
-// Ensure uploads directory exists in the public folder
-const uploadDir = path.join(process.cwd(), 'public', 'uploads');
-// Create the directory with proper permissions if it doesn't exist
-if (!fs.existsSync(uploadDir)) {
-  console.log(`Creating upload directory: ${uploadDir}`);
-  fs.mkdirSync(uploadDir, { recursive: true });
-  console.log(`Upload directory created: ${uploadDir}`);
+// Ensure uploads directory exists
+const UPLOADS_DIR = path.join(process.cwd(), 'uploads');
+if (!fs.existsSync(UPLOADS_DIR)) {
+  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 }
 
-// Configure multer storage
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, uploadDir);
-  },
-  filename: function (req, file, cb) {
-    // Generate a unique filename to avoid collisions
-    const uniqueSuffix = Date.now() + '-' + crypto.randomBytes(6).toString('hex');
-    const ext = path.extname(file.originalname);
-    cb(null, file.fieldname + '-' + uniqueSuffix + ext);
-  }
-});
-
-// Configure multer limits and file filter
+// Configure multer for file uploads
 const upload = multer({
-  storage: storage,
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => {
+      cb(null, UPLOADS_DIR);
+    },
+    filename: (req, file, cb) => {
+      // Create a unique filename with timestamp
+      const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+      const ext = path.extname(file.originalname);
+      cb(null, file.fieldname + '-' + uniqueSuffix + ext);
+    }
+  }),
   limits: {
-    fileSize: 50 * 1024 * 1024, // 50MB in bytes
+    fileSize: 10 * 1024 * 1024, // Limit to 10MB
   },
-  fileFilter: function (req, file, cb) {
-    // Accept all file types for now - can add restrictions if needed
-    cb(null, true);
+  fileFilter: (req, file, cb) => {
+    // Only allow PDF, DOCX, and TXT files
+    const allowedTypes = ['.pdf', '.docx', '.txt'];
+    const ext = path.extname(file.originalname).toLowerCase();
+    
+    if (allowedTypes.includes(ext)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only PDF, DOCX, and TXT files are allowed'));
+    }
   }
 });
 
-// Error handler for multer
-export const handleMulterErrors = (err: any, req: Request, res: Response, next: NextFunction) => {
-  console.error('Multer error:', err);
-  
-  if (err instanceof multer.MulterError) {
-    if (err.code === 'LIMIT_FILE_SIZE') {
-      return res.status(413).json({ 
-        message: 'File too large',
-        error: 'The uploaded file exceeds the maximum size limit of 50MB.'
-      });
-    }
-    
-    return res.status(400).json({
-      message: 'File upload error',
-      error: err.message
-    });
-  }
-  
-  // For non-multer errors, pass to the next error handler
-  next(err);
-};
-
-// Single file upload middleware
-export const uploadSingleFile = (fieldName: string) => {
-  return (req: Request, res: Response, next: NextFunction) => {
-    console.log(`Starting file upload for field: ${fieldName}`);
-    
+export function setupUploadRoutes(app: express.Express) {
+  // Document upload endpoint
+  app.post('/api/documents/upload', upload.single('file'), async (req, res) => {
     try {
-      // Check if upload directory exists and create it if it doesn't
-      if (!fs.existsSync(uploadDir)) {
-        console.log(`Creating upload directory: ${uploadDir}`);
-        fs.mkdirSync(uploadDir, { recursive: true });
+      // Check authentication
+      if (!req.isAuthenticated()) {
+        return res.status(401).json({ error: 'Unauthorized' });
       }
       
-      // Check if directory is writable
-      try {
-        const testPath = path.join(uploadDir, '.test-write-access');
-        fs.writeFileSync(testPath, 'test');
-        fs.unlinkSync(testPath);
-        console.log('Upload directory has write access');
-      } catch (error) {
-        console.error('Upload directory is not writable:', error);
-        return res.status(500).json({ 
-          message: 'Server configuration error: upload directory is not writable',
-          error: 'UPLOAD_DIR_NOT_WRITABLE'
-        });
+      // Check if file was uploaded
+      if (!req.file) {
+        return res.status(400).json({ error: 'No file uploaded' });
       }
       
-      const uploadMiddleware = upload.single(fieldName);
+      const userId = req.user!.id;
+      const uploadedFile = req.file;
+      const fileType = path.extname(uploadedFile.originalname).slice(1); // Remove the dot
+      const { title, policyId } = req.body;
       
-      uploadMiddleware(req, res, (err) => {
-        if (err) {
-          console.error('Upload middleware error:', err);
-          return handleMulterErrors(err, req, res, next);
-        }
-        
-        if (!req.file) {
-          console.log('No file was uploaded');
-          return res.status(400).json({ message: 'No file was uploaded' });
-        }
-        
-        console.log(`File uploaded successfully: ${req.file.filename}`);
-        next();
+      if (!title) {
+        return res.status(400).json({ error: 'Title is required' });
+      }
+      
+      // Create initial document record with pending status
+      const document: InsertDocument = {
+        title,
+        fileName: uploadedFile.originalname,
+        filePath: uploadedFile.path,
+        fileType,
+        fileSize: uploadedFile.size,
+        uploadedBy: userId,
+        policyId: policyId ? parseInt(policyId) : undefined,
+        status: 'pending'
+      };
+      
+      // Save to database
+      const savedDocument = await storage.createDocument(document);
+      
+      // Process the document in the background
+      processDocumentAsync(savedDocument.id, uploadedFile.path, fileType)
+        .catch(err => console.error(`Error processing document ${savedDocument.id}: ${err.message}`));
+      
+      // Return immediately with the pending document
+      res.status(201).json(savedDocument);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error('Error uploading document:', errorMessage);
+      res.status(500).json({ error: 'Failed to upload document' });
+    }
+  });
+  
+  // Get document by ID
+  app.get('/api/documents/:id', async (req, res) => {
+    try {
+      // Check authentication
+      if (!req.isAuthenticated()) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+      
+      const documentId = parseInt(req.params.id);
+      const document = await storage.getDocument(documentId);
+      
+      if (!document) {
+        return res.status(404).json({ error: 'Document not found' });
+      }
+      
+      // Check if the user has access to this document
+      if (document.uploadedBy !== req.user!.id && req.user!.role !== 'admin') {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+      
+      res.json(document);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error('Error retrieving document:', errorMessage);
+      res.status(500).json({ error: 'Failed to retrieve document' });
+    }
+  });
+  
+  // Get all documents for user
+  app.get('/api/documents', async (req, res) => {
+    try {
+      // Check authentication
+      if (!req.isAuthenticated()) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+      
+      const userId = req.user!.id;
+      const documents = await storage.getDocumentsByUser(userId);
+      
+      res.json(documents);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error('Error retrieving documents:', errorMessage);
+      res.status(500).json({ error: 'Failed to retrieve documents' });
+    }
+  });
+  
+  // Answer question about a document
+  app.post('/api/documents/:id/answer', async (req, res) => {
+    try {
+      // Check authentication
+      if (!req.isAuthenticated()) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+      
+      const documentId = parseInt(req.params.id);
+      const { question } = req.body;
+      
+      if (!question) {
+        return res.status(400).json({ error: 'Question is required' });
+      }
+      
+      const document = await storage.getDocument(documentId);
+      
+      if (!document) {
+        return res.status(404).json({ error: 'Document not found' });
+      }
+      
+      // Check if the user has access to this document
+      if (document.uploadedBy !== req.user!.id && req.user!.role !== 'admin') {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+      
+      // Check if document has been processed
+      if (document.status !== 'processed') {
+        return res.status(400).json({ error: 'Document is still being processed' });
+      }
+      
+      // Use document-processor to answer the question
+      const { answer, confidence } = await answerDocumentQuestion(documentId, question);
+      
+      // Create a search query record
+      await storage.createSearchQuery({
+        query: question,
+        userId: req.user!.id,
+        result: answer
       });
-    } catch (error: any) {
-      console.error('Unexpected error in upload middleware:', error);
-      return res.status(500).json({ 
-        message: 'An unexpected error occurred during file upload',
-        error: error.message || 'UNKNOWN_ERROR'
+      
+      // Create activity record
+      await storage.createActivity({
+        userId: req.user!.id,
+        action: 'question',
+        resourceType: 'document',
+        resourceId: documentId,
+        details: `Asked: "${question.substring(0, 100)}${question.length > 100 ? '...' : ''}"`
+      });
+      
+      res.json({ answer, confidence });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error('Error answering question:', errorMessage);
+      res.status(500).json({ error: 'Failed to answer question' });
+    }
+  });
+}
+
+/**
+ * Process an uploaded document asynchronously
+ * @param documentId ID of the document to process
+ * @param filePath Path to the document file
+ * @param fileType Type of the document file
+ */
+async function processDocumentAsync(documentId: number, filePath: string, fileType: string): Promise<void> {
+  try {
+    // Update document status to processing
+    await storage.updateDocument(documentId, { status: 'processing' });
+    
+    // Extract text from document
+    const extractedText = await extractTextFromFile(filePath, fileType);
+    
+    // Generate summary and key points using AI
+    const { summary, keyPoints } = await summarizePolicy(extractedText);
+    
+    // Update document with extracted text, summary, key points, and status
+    await storage.updateDocument(documentId, {
+      extractedText,
+      summary,
+      keyPoints,
+      status: 'processed'
+    });
+    
+    console.log(`Successfully processed document ${documentId}`);
+    
+    // Get the document to retrieve the user who uploaded it
+    const document = await storage.getDocument(documentId);
+    if (document) {
+      // Create activity record
+      await storage.createActivity({
+        userId: document.uploadedBy,
+        action: 'process',
+        resourceType: 'document',
+        resourceId: documentId,
+        details: `Document "${document.title}" processed successfully`
       });
     }
-  };
-};
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error(`Error processing document ${documentId}:`, errorMessage);
+    
+    // Update document with error status
+    await storage.updateDocument(documentId, {
+      status: 'error'
+    });
+    
+    // Log the error rather than trying to save it in the document
+    console.error(`Processing error for document ${documentId}: ${errorMessage}`);
+    
+    // Get the document to retrieve the user who uploaded it
+    const document = await storage.getDocument(documentId);
+    if (document) {
+      // Create activity record for the error
+      await storage.createActivity({
+        userId: document.uploadedBy,
+        action: 'error',
+        resourceType: 'document',
+        resourceId: documentId,
+        details: `Error processing document: ${errorMessage}`
+      });
+    }
+  }
+}
 
-// Function to process the uploaded file and return file information
-export const processUploadedFile = (req: Request, res: Response) => {
-  if (!req.file) {
-    return res.status(400).json({ message: 'No file was uploaded' });
+/**
+ * Answer a question about a document
+ * @param documentId ID of the document
+ * @param question Question to answer
+ * @returns Answer to the question with confidence level
+ */
+async function answerDocumentQuestion(documentId: number, question: string): Promise<{
+  answer: string;
+  confidence: number;
+}> {
+  // Import module here to avoid circular dependency
+  const { answerPolicyQuestion } = await import('./document-processor');
+  
+  // Get document
+  const document = await storage.getDocument(documentId);
+  if (!document || !document.extractedText) {
+    return {
+      answer: "Sorry, the document text is not available.",
+      confidence: 0
+    };
   }
   
-  // Create proper URL path for client to access the file
-  const filePathFormatted = req.file.path.replace(/\\/g, '/'); // Replace backslashes with forward slashes for consistency
-  
-  // Extract the filename from the path
-  const filename = path.basename(filePathFormatted);
-  
-  // Create a proper URL for the uploaded file
-  const fileUrl = `/uploads/${filename}`;
-  
-  // Return the file information to the client with proper URL
-  return res.status(201).json({
-    filename: req.file.filename,
-    originalname: req.file.originalname,
-    mimetype: req.file.mimetype,
-    size: req.file.size,
-    path: filePathFormatted,
-    url: fileUrl
-  });
-};
+  // Use the document-processor to answer the question
+  return await answerPolicyQuestion(question, document.extractedText);
+}
