@@ -597,18 +597,46 @@ export class DatabaseStorage implements IStorage {
   private db: ReturnType<typeof drizzle>;
   private pool: pg.Pool;
   sessionStore: any;
+  private connectionRetries = 0;
+  private readonly maxConnectionRetries = 5;
+  private readonly connectionRetryDelay = 3000; // 3 seconds
 
   constructor() {
+    // Enhanced PostgreSQL connection pool for Replit deployment
     this.pool = new pg.Pool({
       connectionString: process.env.DATABASE_URL,
-      max: 10,
+      max: 20, // Maximum number of clients
+      idleTimeoutMillis: 30000, // How long a client is allowed to remain idle before being closed
+      connectionTimeoutMillis: 10000, // How long to wait for a connection
+      ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : undefined
+    });
+    
+    // Setup event listeners for the pool
+    this.pool.on('error', async (err) => {
+      console.error('Unexpected error on PostgreSQL client', err);
+      if (typeof this.attemptReconnect === 'function') {
+        await this.attemptReconnect();
+      } else {
+        console.error('Failed to reconnect: attemptReconnect is not a function');
+        // Fallback reconnect logic
+        setTimeout(async () => {
+          try {
+            const client = await this.pool.connect();
+            console.log('Successfully reconnected to PostgreSQL (fallback)');
+            client.release();
+          } catch (reconnectError) {
+            console.error('Failed to reconnect to PostgreSQL (fallback)', reconnectError);
+          }
+        }, 3000);
+      }
     });
     
     this.db = drizzle(this.pool);
     
     this.sessionStore = new PostgresSessionStore({
       pool: this.pool,
-      createTableIfMissing: true
+      createTableIfMissing: true,
+      tableName: 'sessions'
     });
     
     // Initialize default data
@@ -1020,6 +1048,60 @@ export class DatabaseStorage implements IStorage {
   async deleteDocument(id: number): Promise<boolean> {
     const result = await this.db.delete(documents).where(eq(documents.id, id)).returning();
     return result.length > 0;
+  }
+  
+  // Method to check database connection
+  async checkConnection(): Promise<boolean> {
+    try {
+      const client = await this.pool.connect();
+      const result = await client.query('SELECT 1 as connection_test');
+      client.release();
+      
+      // Reset connection retries on successful connection
+      if (this.connectionRetries > 0) {
+        console.log('Database connection re-established');
+        this.connectionRetries = 0;
+      }
+      
+      return result.rows[0].connection_test === 1;
+    } catch (error) {
+      console.error('Database connection check failed:', error);
+      return false;
+    }
+  }
+  
+  // Method to attempt reconnecting to the database
+  private async attemptReconnect(): Promise<void> {
+    if (this.connectionRetries >= this.maxConnectionRetries) {
+      console.error(`Failed to reconnect to database after ${this.maxConnectionRetries} attempts`);
+      return;
+    }
+    
+    this.connectionRetries++;
+    console.log(`Attempting to reconnect to database (attempt ${this.connectionRetries}/${this.maxConnectionRetries})...`);
+    
+    // Wait before attempting to reconnect
+    await new Promise(resolve => setTimeout(resolve, this.connectionRetryDelay));
+    
+    try {
+      // Test connection
+      const connectionOk = await this.checkConnection();
+      
+      if (connectionOk) {
+        console.log('Successfully reconnected to database');
+        this.connectionRetries = 0;
+      } else if (this.connectionRetries < this.maxConnectionRetries) {
+        // Try again if still not connected
+        await this.attemptReconnect();
+      }
+    } catch (error) {
+      console.error('Error during database reconnection attempt:', error);
+      
+      if (this.connectionRetries < this.maxConnectionRetries) {
+        // Try again
+        await this.attemptReconnect();
+      }
+    }
   }
 }
 

@@ -3,7 +3,8 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { storage } from './storage';
-import { extractTextFromFile, summarizePolicy } from './document-processor';
+import { extractTextFromFile, processDocumentUpload, getDocumentAnswer } from './document-processor';
+import { analyzePolicyContent } from './huggingface';
 import { InsertDocument } from '@shared/schema';
 
 // Ensure uploads directory exists
@@ -213,7 +214,7 @@ async function processDocumentAsync(documentId: number, filePath: string, fileTy
     const extractedText = await extractTextFromFile(filePath, fileType);
     
     // Generate summary and key points using AI
-    const { summary, keyPoints } = await summarizePolicy(extractedText);
+    const { summary, keyPoints } = await analyzePolicyContent(extractedText);
     
     // Update document with extracted text, summary, key points, and status
     await storage.updateDocument(documentId, {

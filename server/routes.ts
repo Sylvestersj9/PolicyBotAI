@@ -670,13 +670,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  // Extension health check endpoint
-  app.get("/api/extension/health", (req, res) => {
+  // Extension health check endpoint with diagnostics
+  app.get("/api/extension/health", async (req, res) => {
     console.log("Extension health check request received");
+    
+    // Check database connection
+    let dbStatus = "unknown";
+    try {
+      // Try a simple database operation to verify connection
+      await storage.getCategories();
+      dbStatus = "connected";
+    } catch (error) {
+      console.error("Database connection check failed:", error);
+      dbStatus = "disconnected";
+    }
+    
+    // Check Hugging Face API connection
+    let hfStatus = "unknown";
+    if (process.env.HUGGINGFACE_API_KEY) {
+      hfStatus = "configured";
+    } else {
+      hfStatus = "not configured";
+    }
+    
+    // Send detailed health status
     res.status(200).json({ 
       status: "ok", 
       message: "PolicyBot API is running",
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      environment: process.env.NODE_ENV || 'development',
+      database: {
+        status: dbStatus,
+        type: process.env.DATABASE_URL ? "postgresql" : "in-memory"
+      },
+      ai: {
+        huggingface: hfStatus
+      },
+      server: {
+        nodejs: process.version,
+        memory: process.memoryUsage().heapUsed / 1024 / 1024 + " MB",
+        uptime: Math.floor(process.uptime()) + " seconds"
+      }
     });
   });
   

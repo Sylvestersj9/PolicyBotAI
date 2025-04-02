@@ -364,6 +364,155 @@ function performKeywordSearch(query: string, policies: Policy[]): {
  * @param policyContent The content of the policy to analyze
  * @returns Analysis with summary and key points
  */
+/**
+ * Answer a specific question about a document using Hugging Face AI
+ * @param documentContent The content of the document
+ * @param question The question to answer
+ * @returns Answer with confidence score
+ */
+export async function answerDocumentQuestion(documentContent: string, question: string): Promise<{
+  answer: string;
+  confidence: number;
+}> {
+  try {
+    // Truncate document content if needed to fit in context window
+    const truncatedContent = documentContent.slice(0, 4000); 
+    
+    // Create a prompt for the model
+    const prompt = `<s>[INST] You are PolicyBot, an AI assistant specializing in answering questions about documents.
+
+I need you to answer a question based on this document:
+
+"""
+${truncatedContent}
+"""
+
+USER QUESTION: ${question}
+
+Your task:
+1. Carefully read the document and identify the specific information that answers the question
+2. Provide a direct, concise answer based ONLY on what's in the document
+3. Include relevant quotes from the document where appropriate
+4. If the document doesn't contain information to answer the question, clearly state that fact
+5. Format your answer as a JSON object with these fields:
+   - "answer": Your detailed answer to the question
+   - "confidence": A number between 0.0 and 1.0 indicating your confidence level
+
+Example Response:
+{"answer": "According to the document, employee requests for time off must be submitted at least 2 weeks in advance.", "confidence": 0.9}
+
+IMPORTANT: You must format your entire response as a valid JSON object. Do not include any other text, explanations, or commentary - only return a properly formatted JSON object.
+[/INST]`;
+
+    // Call the model with error handling
+    let response: any = null;
+    try {
+      console.log(`Calling Hugging Face model for document Q&A: ${DEFAULT_MODEL}`);
+      response = await hf.textGeneration({
+        model: DEFAULT_MODEL,
+        inputs: prompt,
+        parameters: {
+          max_new_tokens: 800,
+          temperature: 0.2,
+          return_full_text: false,
+        }
+      });
+      console.log("Document Q&A model response received");
+    } catch (modelError) {
+      console.error("Error with primary model for document Q&A:", modelError);
+      
+      // Try fallback models
+      let fallbackSucceeded = false;
+      
+      for (const fallbackModel of FALLBACK_MODELS) {
+        if (fallbackSucceeded) break;
+        
+        try {
+          console.log(`Attempting fallback model for document Q&A: ${fallbackModel}`);
+          response = await hf.textGeneration({
+            model: fallbackModel,
+            inputs: prompt,
+            parameters: {
+              max_new_tokens: 800,
+              temperature: 0.2,
+              return_full_text: false,
+            }
+          });
+          console.log(`Fallback model ${fallbackModel} document Q&A response received`);
+          fallbackSucceeded = true;
+        } catch (fallbackError) {
+          console.error(`Error with fallback model ${fallbackModel} for document Q&A:`, fallbackError);
+        }
+      }
+      
+      if (!fallbackSucceeded) {
+        // If all models fail, provide a basic response
+        return {
+          answer: "I apologize, but I encountered an issue processing your question. Please try again later or rephrase your question.",
+          confidence: 0.1
+        };
+      }
+    }
+
+    try {
+      // Extract JSON from response
+      if (!response || !response.generated_text) {
+        throw new Error("Invalid or empty response from AI model");
+      }
+      
+      const jsonMatch = response.generated_text.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const result = JSON.parse(jsonMatch[0]);
+        return {
+          answer: result.answer || "I couldn't find a specific answer to that question in the document.",
+          confidence: result.confidence || 0.5
+        };
+      } else {
+        throw new Error("No JSON found in response");
+      }
+    } catch (parseError) {
+      console.error("Failed to parse document Q&A response:", parseError);
+      console.log("Raw response:", response?.generated_text || "No response text");
+      
+      // Attempt to extract anything useful from the raw response
+      const rawText = response?.generated_text || "";
+      if (rawText.length > 0) {
+        return {
+          answer: rawText.slice(0, 500) + "...",
+          confidence: 0.4
+        };
+      } else {
+        return {
+          answer: "I apologize, but I couldn't process your question effectively. Please try again with a different question.",
+          confidence: 0.1
+        };
+      }
+    }
+  } catch (error) {
+    console.error("Error in document question answering:", error);
+    return {
+      answer: "An error occurred while processing your question. Please try again later.",
+      confidence: 0.0
+    };
+  }
+}
+
+/**
+ * Answer a specific question about a policy using Hugging Face AI
+ * @param policies Array of policies to search through
+ * @param question The question to answer
+ * @returns Answer with policy information and confidence score
+ */
+export async function answerPolicyQuestion(policies: Policy[], question: string): Promise<{
+  answer: string;
+  policyId?: number;
+  policyTitle?: string;
+  confidence: number;
+}> {
+  // This is essentially a renamed wrapper for searchPoliciesWithAI
+  return searchPoliciesWithAI(question, policies);
+}
+
 export async function analyzePolicyContent(policyContent: string): Promise<{
   summary: string;
   keyPoints: string[];

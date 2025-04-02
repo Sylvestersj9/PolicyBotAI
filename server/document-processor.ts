@@ -4,6 +4,12 @@ import pdfParse from 'pdf-parse';
 import mammoth from 'mammoth';
 import * as docx from 'docx';
 import { HfInference } from '@huggingface/inference';
+import { storage } from './storage';
+import { Document, InsertDocument } from '@shared/schema';
+import { answerDocumentQuestion, analyzePolicyContent } from './huggingface';
+
+// Re-export for other modules to use
+export { analyzePolicyContent };
 
 // Initialize the Hugging Face client with API key
 const hf = new HfInference(process.env.HUGGINGFACE_API_KEY);
@@ -257,6 +263,147 @@ Do not include any other text, explanations, or commentary in your response - on
     return {
       answer: "Sorry, I was unable to process your question due to a technical error.",
       confidence: 0
+    };
+  }
+}
+
+/**
+ * Process an uploaded document file with AI analysis
+ * @param userId The user who uploaded the document
+ * @param filePath Path to the uploaded file
+ * @param fileName Original name of the file
+ * @param fileSize Size of the file in bytes
+ * @param fileType Type of the file (MIME type)
+ * @param policyId Optional policy ID to associate document with
+ * @returns The processed document with AI analysis
+ */
+export async function processDocumentUpload(
+  userId: number,
+  filePath: string,
+  fileName: string,
+  fileSize: number,
+  fileType: string,
+  policyId?: number
+): Promise<Document> {
+  try {
+    console.log(`Processing document upload: ${fileName} (${fileType})`);
+    
+    // Create initial document record with pending status
+    const documentData: InsertDocument = {
+      title: fileName,
+      fileName,
+      filePath,
+      fileType,
+      fileSize,
+      uploadedBy: userId,
+      status: 'pending',
+      policyId: policyId || null
+    };
+    
+    // Create document in database
+    const document = await storage.createDocument(documentData);
+    
+    // Process document in background
+    processDocumentInBackground(document.id).catch(error => {
+      console.error(`Background processing error for document ${document.id}:`, error);
+    });
+    
+    return document;
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error(`Error processing document upload: ${errorMessage}`);
+    throw new Error(`Failed to process document upload: ${errorMessage}`);
+  }
+}
+
+/**
+ * Process document in background and update database with results
+ * @param documentId ID of the document to process
+ */
+export async function processDocumentInBackground(documentId: number): Promise<void> {
+  try {
+    console.log(`Starting background processing for document ${documentId}`);
+    
+    // Get document from database
+    const document = await storage.getDocument(documentId);
+    if (!document) {
+      throw new Error(`Document not found: ${documentId}`);
+    }
+    
+    // Update status to processing
+    await storage.updateDocument(documentId, { status: 'processing' });
+    
+    // Extract text from document
+    const extractedText = await extractTextFromFile(document.filePath, document.fileType);
+    
+    // Analyze the document with AI using imported function
+    const { analyzePolicyContent: analyzeContent } = await import('./huggingface');
+    const analysis = await analyzeContent(extractedText);
+    
+    // Update document with extracted text and AI analysis
+    await storage.updateDocument(documentId, {
+      extractedText,
+      summary: analysis.summary,
+      keyPoints: analysis.keyPoints,
+      status: 'completed'
+    });
+    
+    console.log(`Completed processing document ${documentId}`);
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error(`Error processing document ${documentId}: ${errorMessage}`);
+    
+    // Update document with error status
+    try {
+      await storage.updateDocument(documentId, {
+        status: 'error'
+      });
+    } catch (updateError) {
+      console.error(`Failed to update document error status: ${updateError}`);
+    }
+  }
+}
+
+/**
+ * Get answer to a question about a document
+ * @param documentId ID of the document to query
+ * @param question The question to answer
+ * @returns Answer with confidence score
+ */
+export async function getDocumentAnswer(documentId: number, question: string): Promise<{
+  answer: string;
+  confidence: number;
+  documentId: number;
+  documentTitle: string;
+}> {
+  try {
+    // Get document from database
+    const document = await storage.getDocument(documentId);
+    if (!document) {
+      throw new Error(`Document not found: ${documentId}`);
+    }
+    
+    // Check if document has extracted text
+    if (!document.extractedText) {
+      throw new Error(`Document ${documentId} has no extracted text`);
+    }
+    
+    // Get answer from AI
+    const result = await answerDocumentQuestion(document.extractedText, question);
+    
+    return {
+      ...result,
+      documentId: document.id,
+      documentTitle: document.title
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error(`Error getting document answer: ${errorMessage}`);
+    return {
+      answer: `Error processing your question: ${errorMessage}`,
+      confidence: 0,
+      documentId,
+      documentTitle: 'Unknown'
     };
   }
 }
