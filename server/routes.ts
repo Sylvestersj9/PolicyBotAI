@@ -78,7 +78,7 @@ function requireAuth(req: Request, res: Response, next: NextFunction) {
   res.status(401).json({ message: "Unauthorized" });
 }
 
-export async function registerRoutes(app: Express): Promise<Server> {
+export function registerRoutes(app: Express): void {
   // Setup authentication routes
   setupAuth(app);
   
@@ -1553,6 +1553,5 @@ export async function registerRoutes(app: Express): Promise<Server> {
     fs.mkdirSync(uploadsDir, { recursive: true });
   }
 
-  const httpServer = createServer(app);
-  return httpServer;
+  // Removed httpServer creation - this is now handled in index.ts
 }
