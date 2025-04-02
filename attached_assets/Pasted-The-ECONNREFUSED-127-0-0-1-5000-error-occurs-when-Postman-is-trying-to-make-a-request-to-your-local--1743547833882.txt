@@ -43,7 +43,7 @@ Copy
 Edit
 curl -X POST http://localhost:5000/ask \
 -H "Content-Type: application/json" \
--H "Authorization: Bearer ***REMOVED***" \
+-H "Authorization: Bearer YOUR_API_KEY_HERE" \
 -d '{"question": "What is the purpose of this document?", "documentText": "This policy document explains the guidelines for employee conduct."}'
 This will bypass Postman and directly test the server in your terminal. If curl can't connect either, then there’s likely an issue with your server.
 
