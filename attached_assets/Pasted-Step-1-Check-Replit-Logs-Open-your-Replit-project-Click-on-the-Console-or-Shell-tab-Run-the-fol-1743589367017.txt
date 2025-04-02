@@ -1,0 +1,132 @@
+Step 1: Check Replit Logs
+Open your Replit project.
+
+Click on the Console or Shell tab.
+
+Run the following command to restart and check logs:
+
+sh
+Copy
+Edit
+npm start
+or
+
+sh
+Copy
+Edit
+tsx server/index.ts
+Look for any errors in the logs. Copy and paste them here so I can help analyze them.
+
+Step 2: Verify Your Server is Running
+A 502 error means Replit is trying to reach your server, but it isn't responding properly.
+Run this command to check if your server is actually running:
+
+sh
+Copy
+Edit
+ps aux | grep node
+If your server is not listed, it isn't running.
+
+If it's running but still failing, we need to check port settings.
+
+Step 3: Ensure Correct Port Configuration
+Replit usually assigns a dynamic PORT instead of a fixed one like 3000.
+
+Open your server/index.ts (or wherever your Express.js server is defined).
+
+Ensure you're using:
+
+ts
+Copy
+Edit
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+});
+If you hardcoded a port like 8080, Replit might block it. Try changing to process.env.PORT.
+
+Step 4: Test If the Server is Reachable
+Add a simple test endpoint in your server/index.ts file:
+
+ts
+Copy
+Edit
+app.get('/test', (req, res) => {
+    res.send("Server is working!");
+});
+Now, visit:
+👉 https://policybotai.replit.app/test
+If this route works, your server is running, but other routes may be broken.
+
+Step 5: Check for Missing Files (ENOENT Error)
+You previously got this error:
+
+perl
+Copy
+Edit
+Error: ENOENT: no such file or directory, open './test/data/05-versions-space.pdf'
+Run this command in Replit Shell:
+
+sh
+Copy
+Edit
+ls -l ./test/data/
+If the file is missing, Replit is looking for a file that doesn't exist.
+
+Either upload the missing file or update your code to handle missing files safely:
+
+ts
+Copy
+Edit
+const fs = require('fs');
+const filePath = './test/data/05-versions-space.pdf';
+
+if (!fs.existsSync(filePath)) {
+    console.log("File does not exist, skipping...");
+} else {
+    const fileData = fs.readFileSync(filePath);
+}
+Step 6: Check for Broken Imports
+Your previous error:
+
+javascript
+Copy
+Edit
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/home/runner/workspace/server/aiService'
+Go to server/index.ts
+
+Find where you're importing aiService:
+
+ts
+Copy
+Edit
+import { sendToAI } from './server/aiService';
+Ensure aiService.ts exists:
+
+sh
+Copy
+Edit
+ls -l server/
+If it's missing, re-create it or fix the import path.
+
+Step 7: Check for Dependency Issues
+Run this in Replit Shell:
+
+sh
+Copy
+Edit
+rm -rf node_modules package-lock.json
+npm install
+This will reinstall dependencies and fix broken packages.
+
+Step 8: Restart and Test Again
+Click "Stop" in Replit
+
+Click "Run"
+
+Visit: https://policybotai.replit.app/test
+
+Final Steps
+1️⃣ Check the logs after restarting.
+2️⃣ If the test route works but the AI is broken, the AI function might be misconfigured.
+3️⃣ If errors persist, copy the logs here, and I'll help analyze them.

@@ -11,7 +11,9 @@ import { setupVite } from "./vite";
 import { registerRoutes } from "./routes";
 
 const app = express();
-const port = parseInt(process.env.PORT || '5000', 10); // Use PORT from environment if available
+// Always respect PORT from environment, fallback to standard port 5000
+// This is critical for Replit deployment
+const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 5000;
 
 // Enhanced Replit deployment configuration
 app.set('trust proxy', 1);
@@ -258,8 +260,8 @@ const httpServer = createServer(app);
       // Continue anyway to allow the API to work even if Vite has issues
     }
     
-    // Start the server with better Replit support
-    const host = process.env.NODE_ENV === 'production' ? '0.0.0.0' : 'localhost';
+    // Start the server with better Replit support - always use 0.0.0.0 for Replit
+    const host = '0.0.0.0'; // Bind to all network interfaces to ensure Replit can reach the server
     
     // Add error handler for the HTTP server
     httpServer.on('error', (err) => {
@@ -276,11 +278,35 @@ const httpServer = createServer(app);
       const address = httpServer.address();
       const actualPort = typeof address === 'object' && address ? address.port : port;
       console.log(`Server is running on ${host}:${actualPort}`);
+      console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+      console.log(`Replit environment: ${process.env.REPL_SLUG ? 'Yes' : 'No'}`);
       console.log(`Health check available at: http://${host}:${actualPort}/health`);
       console.log(`API health check available at: http://${host}:${actualPort}/api/extension/health`);
     });
     
+    // Create test endpoints to verify the server is running
+    app.get('/api/test/server', (req, res) => {
+      res.status(200).send({
+        message: 'Server is working!',
+        timestamp: new Date().toISOString(),
+        env: process.env.NODE_ENV || 'development',
+        isReplit: !!process.env.REPL_SLUG,
+        replit: {
+          id: process.env.REPL_ID || null,
+          slug: process.env.REPL_SLUG || null,
+          owner: process.env.REPL_OWNER || null
+        },
+        database: {
+          configured: !!process.env.DATABASE_URL
+        },
+        ai: {
+          huggingface: !!process.env.HUGGINGFACE_API_KEY
+        }
+      });
+    });
+    
     // Start the HTTP server
+    console.log(`Starting HTTP server on ${host}:${port}...`);
     httpServer.listen(port, host);
   } catch (error) {
     console.error('Failed to start server:', error);

@@ -82,6 +82,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Setup authentication routes
   setupAuth(app);
   
+  // Create test endpoints to verify the server is running
+  app.get('/api/test/server', (req, res) => {
+    res.status(200).json({
+      message: 'Server is working!',
+      timestamp: new Date().toISOString(),
+      env: process.env.NODE_ENV || 'development',
+      isReplit: !!process.env.REPL_SLUG,
+      replit: {
+        id: process.env.REPL_ID || null,
+        slug: process.env.REPL_SLUG || null,
+        owner: process.env.REPL_OWNER || null
+      },
+      database: {
+        configured: !!process.env.DATABASE_URL
+      },
+      ai: {
+        huggingface: !!process.env.HUGGINGFACE_API_KEY
+      }
+    });
+  });
+  
+  // Extension public endpoint for testing
+  app.get('/api/extension/ping', (req, res) => {
+    res.status(200).json({
+      status: 'ok',
+      message: 'Extension API is ready',
+      timestamp: new Date().toISOString()
+    });
+  });
+  
   // Serve files from the uploads directory
   app.use("/uploads", requireAuth, express.static(path.join(process.cwd(), "uploads")));
   
@@ -727,6 +757,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
         nodejs: process.version,
         memory: process.memoryUsage().heapUsed / 1024 / 1024 + " MB",
         uptime: Math.floor(process.uptime()) + " seconds"
+      },
+      deployment: {
+        nodeEnv: process.env.NODE_ENV || "development",
+        isReplit: !!process.env.REPL_SLUG,
+        replId: process.env.REPL_ID || null,
+        replSlug: process.env.REPL_SLUG || null
+      }
+    });
+  });
+  
+  // Additional minimal test endpoint that ensures the basic functionality works
+  // Use this to verify that the server is running correctly in Replit deployment
+  app.get("/api/test", (req, res) => {
+    res.json({
+      status: "ok",
+      message: "API is working!",
+      timestamp: new Date().toISOString(),
+      deployment: {
+        environment: process.env.NODE_ENV || "development",
+        isReplit: !!process.env.REPL_SLUG
       }
     });
   });

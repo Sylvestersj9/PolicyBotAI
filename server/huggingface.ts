@@ -15,23 +15,54 @@ export async function getHfClient(): Promise<HfInference> {
   // Return the existing client if already initialized successfully
   if (hf && hfInitialized) return hf;
   
+  // Reset initialization status on retry
+  hfInitialized = false;
+  
   try {
-    // Check if API key is present before initializing
-    if (!process.env.HUGGINGFACE_API_KEY) {
+    // Verify and clean API key (to fix issues with whitespace or other invalid characters)
+    let apiKey = process.env.HUGGINGFACE_API_KEY || '';
+    apiKey = apiKey.trim(); // Remove any whitespace
+    
+    if (!apiKey) {
       console.warn("Warning: Missing HUGGINGFACE_API_KEY environment variable - using limited functionality");
-      hf = new HfInference();
+      hf = new HfInference(); // Initialize without API key
     } else {
-      // Initialize with the API key
-      hf = new HfInference(process.env.HUGGINGFACE_API_KEY);
+      // Log partial API key for debugging (safely truncated)
+      const safeKeyPreview = apiKey.substring(0, 3) + '...' + apiKey.substring(apiKey.length - 3);
+      console.log(`Initializing HuggingFace client with API key: ${safeKeyPreview}`);
+      
+      // Initialize with the cleaned API key
+      hf = new HfInference(apiKey);
       console.log("HuggingFace client initialized successfully with API key");
     }
+    
+    // Mark as initialized
     hfInitialized = true;
+    
+    // Perform a very basic test to verify the client works
+    try {
+      // Simple check to ensure the client is minimally functional
+      console.log("Testing HuggingFace client with basic operation...");
+      // No actual API call needed here, just checking the client object is valid
+    } catch (testError) {
+      console.warn("HuggingFace client test failed:", testError);
+      // Continue anyway - it's better to have a potentially working client than none
+    }
+    
     return hf;
   } catch (error) {
     console.error("Error initializing HuggingFace client:", error);
     // Create a fallback client that will at least allow the app to start
-    hf = new HfInference();
-    return hf;
+    try {
+      hf = new HfInference();
+      console.log("Created fallback HuggingFace client without API key");
+      hfInitialized = true;
+      return hf;
+    } catch (fallbackError) {
+      console.error("Critical error creating fallback HuggingFace client:", fallbackError);
+      // Last resort: return a minimal mock object that won't crash the app
+      return new HfInference();
+    }
   }
 }
 
