@@ -633,9 +633,10 @@ export class DatabaseStorage implements IStorage {
     
     this.db = drizzle(this.pool);
     
+    // Initialize session store with existing table to avoid creation errors
     this.sessionStore = new PostgresSessionStore({
       pool: this.pool,
-      createTableIfMissing: true,
+      createTableIfMissing: false, // Don't try to create the table - it already exists
       tableName: 'sessions'
     });
     
