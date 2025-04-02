@@ -79,15 +79,24 @@ app.get('/health', async (req, res) => {
     try {
       // Try to perform a simple database operation
       if (process.env.DATABASE_URL) {
-        // Import pg to check connection directly if using PostgreSQL
-        const { Pool } = await import('pg');
-        const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-        const client = await pool.connect();
-        const result = await client.query('SELECT version() as version');
-        dbInfo = result.rows[0].version;
-        client.release();
-        await pool.end();
-        dbStatus = "connected";
+        try {
+          // Use the existing storage.checkConnection method instead
+          // Import the storage module to check the database directly
+          const { storage } = await import('./storage');
+          const connectionOk = await storage.checkConnection();
+          
+          if (connectionOk) {
+            dbStatus = "connected";
+            dbInfo = "Connection successful";
+          } else {
+            dbStatus = "error";
+            dbInfo = "Failed to connect to the database";
+          }
+        } catch (pgError) {
+          console.error("Health check - Database connection error:", pgError);
+          dbStatus = "error";
+          dbInfo = pgError instanceof Error ? pgError.message : String(pgError);
+        }
       } else {
         dbStatus = "in-memory";
       }
