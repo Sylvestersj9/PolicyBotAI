@@ -129,14 +129,14 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     
     // Load saved state
-    chrome.storage.local.get(['apiKey', 'user', 'searchHistory'], (result) => {
+    chrome.storage.local.get(['apiKey', 'user', 'searchHistory'], async (result) => {
       if (result.apiKey) {
         apiKey = result.apiKey;
         
         // Update background script with API key
         chrome.runtime.sendMessage({
           action: 'updateApiInfo',
-          data: { apiKey: result.apiKey }
+          data: { apiKey: result.apiKey, apiBaseUrl: API_BASE_URL }
         });
       }
       
@@ -149,7 +149,156 @@ document.addEventListener('DOMContentLoaded', function() {
         searchHistory = result.searchHistory;
         updateRecentSearches();
       }
+      
+      // Add a "Test Connection" button to the login form to help users diagnose connection issues
+      const loginFormContainer = document.querySelector('.login-container');
+      if (loginFormContainer) {
+        // Only add the button if it doesn't already exist
+        if (!document.getElementById('test-connection-btn')) {
+          const testButton = document.createElement('button');
+          testButton.id = 'test-connection-btn';
+          testButton.textContent = 'Test Server Connection';
+          testButton.className = 'btn-secondary';
+          testButton.style.marginTop = '10px';
+          testButton.style.width = '100%';
+          
+          // Add event listener for the test button
+          testButton.addEventListener('click', async () => {
+            await checkServerAndTestKey(testButton);
+          });
+          
+          loginFormContainer.appendChild(testButton);
+        }
+      }
+      
+      // If there's no API key, try to auto-detect and get test key on startup
+      if (!apiKey) {
+        console.log("No API key found, attempting to check for test key availability");
+        const testButton = document.getElementById('test-connection-btn');
+        if (testButton) {
+          // We'll auto-check once on startup, but don't auto-apply the key
+          // Just check if the server is available and has a test key
+          try {
+            testButton.textContent = 'Checking server...';
+            testButton.disabled = true;
+            
+            // Try to fetch the health check endpoint
+            const apiUrl = normalizeUrl(API_BASE_URL);
+            
+            const healthResponse = await fetch(`${apiUrl}/api/extension/health`, {
+              method: 'GET',
+              cache: 'no-cache'
+            }).catch(() => null);
+            
+            if (healthResponse && healthResponse.ok) {
+              // Server is online, now check for test key
+              try {
+                const testKeyResponse = await fetch(`${apiUrl}/api/noauth/test-key`, {
+                  method: 'GET',
+                  cache: 'no-cache'
+                }).catch(() => null);
+                
+                if (testKeyResponse && testKeyResponse.ok) {
+                  // We found a test key but won't auto-apply it
+                  // Just update the button text to indicate test key is available
+                  testButton.textContent = 'Server Online - Click to Setup Test Key';
+                  testButton.className = 'btn-primary';
+                } else {
+                  testButton.textContent = 'Server Online - Login Required';
+                }
+              } catch (keyError) {
+                testButton.textContent = 'Server Online - Login Required';
+              }
+            } else {
+              testButton.textContent = 'Test Server Connection';
+            }
+            
+            testButton.disabled = false;
+          } catch (error) {
+            console.error('Auto-connection check error:', error);
+            testButton.textContent = 'Test Server Connection';
+            testButton.disabled = false;
+          }
+        }
+      }
     });
+    
+    // Helper function to check server and test key
+    async function checkServerAndTestKey(buttonElement) {
+      try {
+        buttonElement.textContent = 'Testing...';
+        buttonElement.disabled = true;
+        
+        // Try to fetch the health check endpoint
+        const apiUrl = normalizeUrl(API_BASE_URL);
+        
+        // Try the health endpoint first
+        try {
+          const healthResponse = await fetch(`${apiUrl}/api/extension/health`, {
+            method: 'GET',
+            cache: 'no-cache'
+          });
+          
+          if (healthResponse.ok) {
+            const healthData = await healthResponse.json();
+            alert(`Server is online! Status: ${healthData.status || 'OK'}`);
+            
+            // After confirming server is online, try to get test API key
+            try {
+              const testKeyResponse = await fetch(`${apiUrl}/api/noauth/test-key`, {
+                method: 'GET',
+                cache: 'no-cache'
+              });
+              
+              if (testKeyResponse.ok) {
+                const keyData = await testKeyResponse.json();
+                const testKey = keyData.apiKey;
+                
+                if (confirm(`Server connection successful! Found test API key: ${testKey}\n\nWould you like to use this test API key for the extension?`)) {
+                  // Save the test API key
+                  apiKey = testKey;
+                  chrome.storage.local.set({ 
+                    apiKey: apiKey,
+                    apiBaseUrl: apiUrl
+                  });
+                  
+                  // Update the background script
+                  chrome.runtime.sendMessage({
+                    action: 'updateApiInfo',
+                    data: {
+                      apiKey: apiKey,
+                      apiBaseUrl: apiUrl
+                    }
+                  });
+                  
+                  // Show success
+                  alert('Test API key configured successfully! You can now use the extension without logging in.');
+                  updateUserInterface();
+                }
+              } else {
+                alert('Server is online but test API key endpoint is not available. Try logging in with valid credentials.');
+              }
+            } catch (keyError) {
+              console.error('Error fetching test key:', keyError);
+              alert('Server is online but could not fetch test API key. Try logging in with valid credentials.');
+            }
+          } else {
+            alert(`Server returned error status: ${healthResponse.status}. The server might be running but has issues.`);
+          }
+        } catch (healthError) {
+          console.error('Health check error:', healthError);
+          alert(`Could not connect to server at ${apiUrl}. Please verify the URL is correct and the server is running.`);
+        }
+        
+        buttonElement.textContent = 'Test Server Connection';
+        buttonElement.disabled = false;
+      } catch (error) {
+        console.error('Test connection error:', error);
+        alert(`Connection test failed: ${error.message}`);
+        buttonElement.textContent = 'Test Server Connection';
+        buttonElement.disabled = false;
+      }
+    }
     
     // Set up event listeners
     loginBtn.addEventListener('click', toggleLoginForm);
@@ -310,7 +459,111 @@ document.addEventListener('DOMContentLoaded', function() {
         submitBtn.disabled = false;
       }
       
-      alert(`Login error: ${error.message}`);
+      // Create more detailed error message with troubleshooting steps
+      let errorMsg = `Login error: ${error.message}\n\nTroubleshooting tips:`;
+      
+      // Add specific suggestions based on error type
+      if (error.message.includes('Failed to fetch') || error.message.includes('Network error')) {
+        errorMsg += `\n• Check if your server URL is correct: ${API_BASE_URL}`;
+        errorMsg += '\n• Make sure the server is running';
+        errorMsg += '\n• Try using the "Test Connection" button below to verify connectivity';
+        
+        // Add a button to check server status and test API key
+        const loginFormContainer = document.querySelector('.login-container');
+        if (loginFormContainer) {
+          // Only add the button if it doesn't already exist
+          if (!document.getElementById('test-connection-btn')) {
+            const testButton = document.createElement('button');
+            testButton.id = 'test-connection-btn';
+            testButton.textContent = 'Test Connection';
+            testButton.className = 'btn-primary';
+            testButton.style.marginTop = '10px';
+            
+            // Add event listener for the test button
+            testButton.addEventListener('click', async () => {
+              try {
+                testButton.textContent = 'Testing...';
+                testButton.disabled = true;
+                
+                // Try to fetch the health check endpoint
+                const apiUrl = normalizeUrl(API_BASE_URL);
+                
+                // Try the health endpoint first
+                try {
+                  const healthResponse = await fetch(`${apiUrl}/api/extension/health`, {
+                    method: 'GET',
+                    cache: 'no-cache'
+                  });
+                  
+                  if (healthResponse.ok) {
+                    const healthData = await healthResponse.json();
+                    alert(`Server is online! Status: ${healthData.status || 'OK'}`);
+                    
+                    // After confirming server is online, try to get test API key
+                    try {
+                      const testKeyResponse = await fetch(`${apiUrl}/api/noauth/test-key`, {
+                        method: 'GET',
+                        cache: 'no-cache'
+                      });
+                      
+                      if (testKeyResponse.ok) {
+                        const keyData = await testKeyResponse.json();
+                        const testKey = keyData.apiKey;
+                        
+                        if (confirm(`Server connection successful! Found test API key: ${testKey}\n\nWould you like to use this test API key for the extension?`)) {
+                          // Save the test API key
+                          apiKey = testKey;
+                          chrome.storage.local.set({ 
+                            apiKey: apiKey,
+                            apiBaseUrl: apiUrl
+                          });
+                          
+                          // Update the background script
+                          chrome.runtime.sendMessage({
+                            action: 'updateApiInfo',
+                            data: {
+                              apiKey: apiKey,
+                              apiBaseUrl: apiUrl
+                            }
+                          });
+                          
+                          // Show success
+                          alert('Test API key configured successfully! You can now use the extension without logging in.');
+                          updateUserInterface();
+                        }
+                      } else {
+                        alert('Server is online but test API key endpoint is not available. Try logging in with valid credentials.');
+                      }
+                    } catch (keyError) {
+                      console.error('Error fetching test key:', keyError);
+                      alert('Server is online but could not fetch test API key. Try logging in with valid credentials.');
+                    }
+                  } else {
+                    alert(`Server returned error status: ${healthResponse.status}. The server might be running but has issues.`);
+                  }
+                } catch (healthError) {
+                  console.error('Health check error:', healthError);
+                  alert(`Could not connect to server at ${apiUrl}. Please verify the URL is correct and the server is running.`);
+                }
+                
+                testButton.textContent = 'Test Connection';
+                testButton.disabled = false;
+              } catch (error) {
+                console.error('Test connection error:', error);
+                alert(`Connection test failed: ${error.message}`);
+                testButton.textContent = 'Test Connection';
+                testButton.disabled = false;
+              }
+            });
+            
+            loginFormContainer.appendChild(testButton);
+          }
+        }
+      }
+      
+      errorMsg += '\n\nIf problems persist, please contact support.';
+      
+      alert(errorMsg);
     }
   }
 
