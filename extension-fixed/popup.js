@@ -210,16 +210,16 @@ document.addEventListener('DOMContentLoaded', function() {
       // Normalize URL for security
       const loginUrl = normalizeUrl(API_BASE_URL);
       
-      console.log(`Sending login request to: ${loginUrl}/api/login`);
+      console.log(`Sending login request to: ${loginUrl}/api/extension/login`);
       
       // Add more detailed debugging information
       const requestStartTime = new Date().getTime();
       
-      // Attempt login
+      // Attempt login via the extension-specific login endpoint
       let response;
       try {
         response = await Promise.race([
-          fetch(`${loginUrl}/api/login`, {
+          fetch(`${loginUrl}/api/extension/login`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -227,6 +227,7 @@ document.addEventListener('DOMContentLoaded', function() {
             },
             cache: 'no-cache',
             mode: 'cors',
+            credentials: 'omit', // Don't include cookies for extensions
             body: JSON.stringify({ username, password })
           }),
           // Add a timeout to better diagnose network issues
@@ -264,52 +265,21 @@ document.addEventListener('DOMContentLoaded', function() {
         throw new Error('Invalid response format from server. Expected JSON.');
       }
       
-      // Get API key
-      console.log(`Attempting to get API key from: ${loginUrl}/api/extension/generate-key`);
-      let keyResponse;
-      try {
-        keyResponse = await fetch(`${loginUrl}/api/extension/generate-key`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json'
-          },
-          credentials: 'include' // Include cookies for session authentication
-        });
-      } catch (fetchError) {
-        console.error("Fetch error during API key generation:", fetchError);
-        throw new Error(`Network error during API key generation: ${fetchError.message}`);
+      // We already have the API key from the extension/login response
+      if (userData && userData.apiKey) {
+        console.log("API key obtained directly from login response");
+        apiKey = userData.apiKey;
+      } else {
+        console.error("No API key in login response");
+        throw new Error("Login succeeded but no API key was provided");
       }
       
-      if (!keyResponse.ok) {
-        let errorMessage = 'Failed to get API key';
-        try {
-          const errorData = await keyResponse.json();
-          if (errorData && errorData.message) {
-            errorMessage = errorData.message;
-          }
-        } catch (e) {
-          errorMessage = `API key generation failed with status ${keyResponse.status}`;
-        }
-        throw new Error(errorMessage);
-      }
-      
-      let keyData;
-      try {
-        keyData = await keyResponse.json();
-        if (!keyData || !keyData.apiKey) {
-          throw new Error('No API key returned from server');
-        }
-      } catch (e) {
-        throw new Error('Invalid response format from server. Expected JSON with apiKey property.');
-      }
-      
-      apiKey = keyData.apiKey;
+      // We don't need to make an additional API call for the key anymore
       
       // Save to local storage
       currentUser = userData;
       chrome.storage.local.set({ 
-        apiKey: keyData.apiKey,
+        apiKey: apiKey, // We already have the apiKey from userData
         user: userData,
         apiBaseUrl: loginUrl
       });
@@ -318,7 +288,7 @@ document.addEventListener('DOMContentLoaded', function() {
       chrome.runtime.sendMessage({
         action: 'updateApiInfo',
         data: {
-          apiKey: keyData.apiKey,
+          apiKey: apiKey, // We already have the apiKey from userData
           apiBaseUrl: loginUrl
         }
       });
@@ -381,14 +351,28 @@ document.addEventListener('DOMContentLoaded', function() {
       
       console.log(`Searching with query: "${query}" at ${API_BASE_URL}/api/extension/search`);
       
-      const response = await fetch(`${API_BASE_URL}/api/extension/search`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-API-Key': apiKey
-        },
-        body: JSON.stringify({ query })
-      });
+      // Normalize URL for security
+      const searchUrl = normalizeUrl(API_BASE_URL);
+      
+      console.log(`Searching with query: "${query}" at ${searchUrl}/api/extension/search with key ${apiKey.substring(0, 5)}...`);
+      
+      const response = await Promise.race([
+        fetch(`${searchUrl}/api/extension/search`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'X-API-Key': apiKey
+          },
+          cache: 'no-cache',
+          mode: 'cors',
+          body: JSON.stringify({ query })
+        }),
+        // Add a timeout to better diagnose network issues
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Request timed out after 30 seconds')), 30000)
+        )
+      ]);
       
       if (!response.ok) {
         let errorMessage = 'Search failed';

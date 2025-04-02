@@ -182,15 +182,56 @@ async function searchPolicies(query) {
   }
   
   try {
-    const response = await fetch(`${searchUrl}/api/extension/search`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'X-API-Key': apiKey
-      },
-      body: JSON.stringify({ query })
-    });
+    // First check if server is reachable with a health check
+    try {
+      console.log("Performing health check before search");
+      const healthResponse = await fetch(`${searchUrl}/api/extension/health`, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json'
+        },
+        cache: 'no-cache',
+        mode: 'cors'
+      });
+      
+      if (!healthResponse.ok) {
+        throw new Error(`Server health check failed with status ${healthResponse.status}`);
+      }
+      
+      const healthData = await healthResponse.json();
+      console.log("Server health check result:", healthData);
+      
+      if (healthData.status !== 'ok') {
+        console.warn("Server health check returned non-ok status:", healthData.status);
+      }
+    } catch (healthError) {
+      console.error("Health check error:", healthError);
+      // We'll continue with the search anyway, but log the health check failure
+    }
+    
+    console.log(`Making search request to ${searchUrl}/api/extension/search with API key`);
+    const requestStartTime = new Date().getTime();
+    
+    const response = await Promise.race([
+      fetch(`${searchUrl}/api/extension/search`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'X-API-Key': apiKey
+        },
+        cache: 'no-cache',
+        mode: 'cors',
+        body: JSON.stringify({ query })
+      }),
+      // Add a timeout to better diagnose network issues
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Request timed out after 30 seconds')), 30000)
+      )
+    ]);
+    
+    const requestEndTime = new Date().getTime();
+    console.log(`Search request completed in ${requestEndTime - requestStartTime}ms`);
     
     if (!response.ok) {
       let errorMessage = 'Search failed';
