@@ -1,170 +1,235 @@
-import express, { Request, Response, NextFunction } from 'express';
-import cors from 'cors';
-import path from 'path';
-import fs from 'fs';
-import multer from 'multer';
-import { registerRoutes } from './routes';
-import { setupVite } from './vite';
-import { setupAuth } from './auth';
-import { createServer } from 'http';
-
-console.log("Initializing server...");
+import express, { Request, Response, NextFunction } from "express";
+import multer from "multer";
+import path from "path";
+import fs from "fs";
+import { createServer } from "http";
+import pdfParse from "pdf-parse";
+import mammoth from "mammoth";
+import cors from "cors"; // Import cors
+import { sendToAI } from "./aiService"; // This is where your AI processing logic will go (replace with actual path)
+import { setupVite } from "./vite";
+import { registerRoutes } from "./routes";
 
 const app = express();
-const PORT = process.env.PORT || 5000;
-const isProduction = process.env.NODE_ENV === 'production';
-const isReplit = process.env.REPL_OWNER !== undefined || process.env.REPL_ID !== undefined;
+const port = parseInt(process.env.PORT || '5000', 10); // Use PORT from environment if available
 
-// Create uploads directory if it doesn't exist
-const uploadsDir = path.join(process.cwd(), 'uploads');
-if (!fs.existsSync(uploadsDir)) {
-  console.log(`Creating uploads directory at ${uploadsDir}`);
-  fs.mkdirSync(uploadsDir, { recursive: true });
-}
+// Enhanced Replit deployment configuration
+app.set('trust proxy', 1);
+app.enable('trust proxy');
 
-// Create public/uploads directory if it doesn't exist (for direct web access)
-const publicUploadsDir = path.join(process.cwd(), 'public', 'uploads');
-if (!fs.existsSync(publicUploadsDir)) {
-  console.log(`Creating public uploads directory at ${publicUploadsDir}`);
-  fs.mkdirSync(publicUploadsDir, { recursive: true });
-}
-
-// Enable CORS for all origins during development
+// CORS configuration for cross-origin requests (especially for the Chrome extension)
 app.use(cors({
-  origin: isProduction 
-    ? ['https://policybotai.replit.app', /\.replit\.app$/] 
-    : true,
+  // Allow all origins for compatibility with Chrome extensions
+  origin: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key'],
+  exposedHeaders: ['Set-Cookie', 'Date', 'ETag'],
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key']
+  maxAge: 86400 // 24 hours
 }));
 
-// Basic request logging middleware
+// Middleware for parsing JSON and URL-encoded data with error handling
+app.use(express.json({
+  limit: '10mb', // Increase JSON payload limit
+  verify: (req, res, buf) => {
+    try { JSON.parse(buf.toString()); } catch (e) { console.error('Invalid JSON:', e); }
+  }
+}));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Add simple request logging
 app.use((req: Request, res: Response, next: NextFunction) => {
-  const timestamp = new Date().toISOString();
-  console.log(`[${timestamp}] ${req.method} ${req.url}`);
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
   next();
 });
 
-// Parse JSON bodies
-app.use(express.json({ limit: '50mb' }));
-
-// Parse URL-encoded bodies
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
-
-// Configure multer for document uploads
-const multerStorage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, uploadsDir);
-  },
-  filename: (req, file, cb) => {
-    // Generate a safe filename
-    const timestamp = Date.now();
-    const extname = path.extname(file.originalname);
-    const sanitizedFilename = path.basename(file.originalname, extname)
-      .replace(/[^a-zA-Z0-9]/g, '_')
-      .toLowerCase();
-    cb(null, `${sanitizedFilename}-${timestamp}${extname}`);
+// Force redirect to HTTPS in production (Replit deployment)
+app.use((req: Request, res: Response, next: NextFunction) => {
+  // Skip for localhost/development environments
+  if (req.hostname === 'localhost' || req.hostname.includes('127.0.0.1')) {
+    return next();
   }
-});
-
-// File filter for document uploads
-const fileFilter = (req: any, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
-  const allowedMimeTypes = [
-    'application/pdf',
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    'application/msword',
-    'text/plain'
-  ];
   
-  // Check if the file MIME type is allowed
-  if (allowedMimeTypes.includes(file.mimetype)) {
-    cb(null, true);
-  } else {
-    cb(new Error(`File type not supported: ${file.mimetype}. Only PDF, DOCX, DOC, and TXT files are allowed.`));
+  // Skip if already HTTPS
+  if (req.secure || req.headers['x-forwarded-proto'] === 'https') {
+    return next();
   }
-};
-
-// Setup multer upload configuration
-export const upload = multer({
-  storage: multerStorage,
-  limits: {
-    fileSize: 20 * 1024 * 1024, // 20MB
-  },
-  fileFilter
+  
+  // Redirect to HTTPS
+  const httpsUrl = `https://${req.hostname}${req.originalUrl}`;
+  console.log(`Redirecting to HTTPS: ${httpsUrl}`);
+  res.redirect(301, httpsUrl);
 });
 
-// Health check endpoint
-app.get('/health', (req, res) => {
-  res.status(200).json({ 
-    status: 'ok',
-    message: 'Server is operational',
-    timestamp: new Date().toISOString()
-  });
-});
-
-// Setup authentication
-setupAuth(app);
-
-console.log("Registering routes and connecting to database...");
-
-// Create HTTP server
-const server = createServer(app);
-
-// Register API routes
-registerRoutes(app);
-
-// Setup Vite integration for the frontend
-setupVite(app, server).catch(err => {
-  console.error("Failed to setup Vite:", err);
-});
-
-// Global error handler
+// Error handling middleware (must be after all routes)
 app.use((err: any, req: Request, res: Response, next: NextFunction) => {
   console.error('Server error:', err);
-  
-  // Return a structured error response
-  res.status(err.status || 500).json({
-    error: true,
-    message: err.message || 'Internal Server Error',
-    stack: isProduction ? undefined : err.stack
+  res.status(500).json({ 
+    error: 'Internal Server Error', 
+    message: process.env.NODE_ENV === 'production' ? 'Something went wrong' : err.message 
   });
 });
 
-// Start the HTTP server
-server.listen(Number(PORT), '0.0.0.0', () => {
-  console.log(`Server is running on 0.0.0.0:${PORT}`);
-  console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`Replit environment: ${isReplit ? 'Yes' : 'No'}`);
-  console.log(`Health check available at: http://0.0.0.0:${PORT}/health`);
-  console.log(`API health check available at: http://0.0.0.0:${PORT}/api/extension/health`);
+// Add a main health check endpoint with detailed diagnostics
+app.get('/health', async (req, res) => {
+  try {
+    // Check if we can connect to the database
+    let dbStatus = "unknown";
+    let dbInfo = null;
+    try {
+      // Try to perform a simple database operation
+      if (process.env.DATABASE_URL) {
+        // Import pg to check connection directly if using PostgreSQL
+        const { Pool } = await import('pg');
+        const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+        const client = await pool.connect();
+        const result = await client.query('SELECT version() as version');
+        dbInfo = result.rows[0].version;
+        client.release();
+        await pool.end();
+        dbStatus = "connected";
+      } else {
+        dbStatus = "in-memory";
+      }
+    } catch (dbError) {
+      console.error("Health check - Database connection test failed:", dbError);
+      dbStatus = "error";
+      dbInfo = dbError instanceof Error ? dbError.message : String(dbError);
+    }
+
+    // Send detailed health response
+    res.status(200).json({
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+      application: {
+        name: "PolicyBot AI",
+        version: "1.0.0"
+      },
+      system: {
+        node: process.version,
+        platform: process.platform,
+        memory: {
+          totalHeapMB: Math.round(process.memoryUsage().heapTotal / 1024 / 1024),
+          usedHeapMB: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
+          rss: Math.round(process.memoryUsage().rss / 1024 / 1024)
+        },
+        uptime: process.uptime()
+      },
+      database: {
+        type: process.env.DATABASE_URL ? "postgresql" : "in-memory",
+        status: dbStatus,
+        info: dbInfo
+      },
+      apis: {
+        huggingface: process.env.HUGGINGFACE_API_KEY ? "configured" : "not configured",
+        openai: process.env.OPENAI_API_KEY ? "configured" : "not configured"
+      }
+    });
+  } catch (error) {
+    console.error("Health check error:", error);
+    res.status(500).json({ 
+      status: 'error',
+      timestamp: new Date().toISOString(),
+      message: error instanceof Error ? error.message : String(error)
+    });
+  }
 });
 
-// Handle graceful shutdown
-const shutdownGracefully = () => {
-  console.log('Shutting down server gracefully...');
-  server.close(() => {
-    console.log('Server shutdown complete');
-    process.exit(0);
+// Set up storage engine for multer
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, 'uploads/'); // Specify the folder to store uploaded files
+  },
+  filename: (req, file, cb) => {
+    cb(null, Date.now() + path.extname(file.originalname)); // Give the file a unique name
+  }
+});
+
+// Initialize multer with the storage configuration
+const upload = multer({ storage });
+
+// Create an upload endpoint
+app.post('/upload', upload.single('file'), (req: Request, res: Response) => {
+  if (req.file) {
+    const filePath = req.file.path; // Get the file path from the uploaded file
+
+    // Check file type and process accordingly
+    if (req.file.mimetype === "application/pdf") {
+      handlePdf(filePath, res); // Process PDF file
+    } else if (req.file.mimetype === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
+      handleDocx(filePath, res); // Process DOCX file
+    } else {
+      res.status(400).send({ message: 'Unsupported file type' });
+    }
+  } else {
+    res.status(400).send({ message: 'No file uploaded' });
+  }
+});
+
+// Handle PDF file
+const handlePdf = (filePath: string, res: Response) => {
+  fs.readFile(filePath, (err, data) => {
+    if (err) return res.status(500).send('Error reading PDF file.');
+
+    pdfParse(data).then((doc) => {
+      sendToAI(doc.text, res); // Send extracted text to AI
+    }).catch((error) => {
+      res.status(500).send('Error parsing PDF.');
+    });
   });
-  
-  // Force shutdown after 10 seconds if server hasn't closed
-  setTimeout(() => {
-    console.error('Server shutdown timed out, forcing exit');
-    process.exit(1);
-  }, 10000);
 };
 
-process.on('SIGINT', shutdownGracefully);
-process.on('SIGTERM', shutdownGracefully);
+// Handle DOCX file
+const handleDocx = (filePath: string, res: Response) => {
+  fs.readFile(filePath, (err, data) => {
+    if (err) return res.status(500).send('Error reading DOCX file.');
 
-// Handle uncaught exceptions and unhandled promise rejections
-process.on('uncaughtException', (err) => {
-  console.error('Uncaught Exception:', err);
-  // Don't exit the process, just log the error
+    mammoth.extractRawText({ buffer: data }).then((result) => {
+      sendToAI(result.value, res); // Send extracted text to AI
+    }).catch((error) => {
+      res.status(500).send('Error parsing DOCX.');
+    });
+  });
+};
+
+// Create directories if they don't exist
+['uploads', 'public/uploads'].forEach(dir => {
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
 });
 
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('Unhandled Promise Rejection:', reason);
-  // Don't exit the process, just log the error
-});
+// Create HTTP server
+const httpServer = createServer(app);
+
+// Start the server process with improved error handling
+(async () => {
+  try {
+    console.log('Initializing server...');
+    // Wait for database connection and API route registration
+    await registerRoutes(app);
+    console.log('Routes registered successfully');
+    
+    // Setup Vite for frontend
+    await setupVite(app, httpServer);
+    console.log('Vite frontend setup completed');
+    
+    // Start the server
+    httpServer.listen(port, '0.0.0.0', () => {
+      console.log(`Server is running on port ${port}`);
+      console.log(`Health check available at: http://localhost:${port}/health`);
+      console.log(`API health check available at: http://localhost:${port}/api/extension/health`);
+    });
+    
+    // Add shutdown handler
+    process.on('SIGTERM', () => {
+      console.log('SIGTERM signal received, shutting down gracefully');
+      httpServer.close(() => {
+        console.log('Server closed');
+      });
+    });
+  } catch (error) {
+    console.error('Failed to start server:', error);
+    process.exit(1);
+  }
+})();

@@ -633,9 +633,10 @@ export class DatabaseStorage implements IStorage {
     
     this.db = drizzle(this.pool);
     
-    // Use memory session store instead of PostgreSQL store to avoid table conflicts
-    this.sessionStore = new MemoryStore({
-      checkPeriod: 86400000, // 24 hours
+    this.sessionStore = new PostgresSessionStore({
+      pool: this.pool,
+      createTableIfMissing: true,
+      tableName: 'sessions'
     });
     
     // Initialize default data

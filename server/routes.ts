@@ -78,103 +78,19 @@ function requireAuth(req: Request, res: Response, next: NextFunction) {
   res.status(401).json({ message: "Unauthorized" });
 }
 
-export function registerRoutes(app: Express): void {
+export async function registerRoutes(app: Express): Promise<Server> {
   // Setup authentication routes
   setupAuth(app);
-  
-  // Create test endpoints to verify the server is running
-  app.get('/api/test/server', (req, res) => {
-    res.status(200).json({
-      message: 'Server is working!',
-      timestamp: new Date().toISOString(),
-      env: process.env.NODE_ENV || 'development',
-      isReplit: !!process.env.REPL_SLUG,
-      replit: {
-        id: process.env.REPL_ID || null,
-        slug: process.env.REPL_SLUG || null,
-        owner: process.env.REPL_OWNER || null
-      },
-      database: {
-        configured: !!process.env.DATABASE_URL
-      },
-      ai: {
-        huggingface: !!process.env.HUGGINGFACE_API_KEY
-      }
-    });
-  });
-  
-  // Extension public endpoint for testing
-  app.get('/api/extension/ping', (req, res) => {
-    res.status(200).json({
-      status: 'ok',
-      message: 'Extension API is ready',
-      timestamp: new Date().toISOString()
-    });
-  });
-  
-  // Enhanced health check for debugging 502 errors
-  app.get('/api/debug', (req, res) => {
-    res.status(200).json({
-      status: 'ok',
-      message: 'Debug API endpoint working!',
-      timestamp: new Date().toISOString(),
-      headers: req.headers,
-      deployment: {
-        environment: process.env.NODE_ENV || 'development',
-        isReplit: !!process.env.REPL_SLUG,
-        replId: process.env.REPL_ID || null,
-        port: process.env.PORT || 'default',
-        protocol: req.protocol,
-        host: req.hostname,
-        ip: req.ip,
-        secure: req.secure
-      }
-    });
-  });
   
   // Serve files from the uploads directory
   app.use("/uploads", requireAuth, express.static(path.join(process.cwd(), "uploads")));
   
   // API Key validation middleware for extension requests
-  // Add endpoint to get test API key for extension testing
-  app.get('/api/noauth/test-key', (req, res) => {
-    // This is just a test API key for development purposes
-    const testApiKey = 'policybot-test-key-123456';
-    res.status(200).json({ 
-      status: "ok",
-      message: "This is a test API key for PolicyBot extension testing",
-      apiKey: testApiKey,
-      note: "This key provides limited access for testing only. Use only in development.",
-      usage: "Use this API key with the extension by setting it as x-api-key header",
-      instructions: [
-        "1. Enter this API key in your extension settings",
-        "2. Test basic search functionality without needing an account",
-        "3. For full access, register and get your personal API key"
-      ]
-    });
-  });
-
   const validateApiKey = async (req: Request, res: Response, next: NextFunction) => {
-    const apiKey = req.headers['x-api-key'] as string || req.body.apiKey;
+    const apiKey = req.headers['x-api-key'] as string;
     
     if (!apiKey) {
       return res.status(401).json({ message: "API key is required" });
-    }
-    
-    // Allow the test API key for development purposes
-    const testApiKey = 'policybot-test-key-123456';
-    if (apiKey === testApiKey) {
-      console.log("Using test API key for extension access");
-      try {
-        // Use the first admin user for test API key
-        const adminUser = await storage.getUserByUsername('admin');
-        if (adminUser) {
-          req.user = adminUser;
-          return next();
-        }
-      } catch (err) {
-        console.warn("Could not find admin user for test API key, continuing validation");
-      }
     }
     
     try {
@@ -769,28 +685,12 @@ export function registerRoutes(app: Express): void {
       dbStatus = "disconnected";
     }
     
-    // Check Hugging Face API connection with actual API test
+    // Check Hugging Face API connection
     let hfStatus = "unknown";
-    let hfDetails = null;
-    try {
-      if (!process.env.HUGGINGFACE_API_KEY) {
-        hfStatus = "not configured";
-      } else {
-        // Import the getHfClient function to check real connection status
-        const { getHfClient } = await import('./huggingface');
-        const hfClient = await getHfClient();
-        if (hfClient) {
-          hfStatus = "connected";
-          hfDetails = "API key validated";
-        } else {
-          hfStatus = "error";
-          hfDetails = "Failed to initialize HuggingFace client";
-        }
-      }
-    } catch (error) {
-      console.error("Hugging Face connection check failed:", error);
-      hfStatus = "error";
-      hfDetails = error instanceof Error ? error.message : String(error);
+    if (process.env.HUGGINGFACE_API_KEY) {
+      hfStatus = "configured";
+    } else {
+      hfStatus = "not configured";
     }
     
     // Send detailed health status
@@ -804,169 +704,15 @@ export function registerRoutes(app: Express): void {
         type: process.env.DATABASE_URL ? "postgresql" : "in-memory"
       },
       ai: {
-        huggingface: hfStatus,
-        details: hfDetails
+        huggingface: hfStatus
       },
       server: {
         nodejs: process.version,
         memory: process.memoryUsage().heapUsed / 1024 / 1024 + " MB",
         uptime: Math.floor(process.uptime()) + " seconds"
-      },
-      deployment: {
-        nodeEnv: process.env.NODE_ENV || "development",
-        isReplit: !!process.env.REPL_SLUG,
-        replId: process.env.REPL_ID || null,
-        replSlug: process.env.REPL_SLUG || null
       }
     });
   });
-
-  // Enhanced diagnostic endpoint for extension testing
-  app.get("/api/extension/diagnostics", async (req, res) => {
-    try {
-      console.log("Extension diagnostics request received");
-      
-      // Check database connection
-      let dbStatus = "unknown";
-      let dbError = null;
-      let policiesCount = 0;
-      try {
-        // Try a simple database operation to verify connection
-        await storage.getCategories();
-        dbStatus = "connected";
-        
-        // Count policies
-        try {
-          const policies = await storage.getPolicies();
-          policiesCount = policies.length;
-        } catch (policyError) {
-          console.error("Failed to fetch policies:", policyError);
-        }
-      } catch (error) {
-        console.error("Database connection check failed:", error);
-        dbStatus = "disconnected";
-        dbError = error instanceof Error ? error.message : String(error);
-      }
-      
-      // Check Hugging Face API connection
-      let hfStatus = "unknown";
-      let hfDetails = null;
-      try {
-        if (!process.env.HUGGINGFACE_API_KEY) {
-          hfStatus = "not configured";
-          hfDetails = "HUGGINGFACE_API_KEY not set";
-        } else {
-          try {
-            const { getHfClient } = await import('./huggingface');
-            const hfClient = await getHfClient();
-            hfStatus = "available";
-          } catch (hfError) {
-            hfStatus = "error";
-            hfDetails = hfError instanceof Error ? hfError.message : String(hfError);
-          }
-        }
-      } catch (error) {
-        console.error("Hugging Face connection check failed:", error);
-        hfStatus = "error";
-        hfDetails = error instanceof Error ? error.message : String(error);
-      }
-      
-      // Check extension API endpoints
-      const testApiKey = 'policybot-test-key-123456';
-      
-      // Send detailed diagnostic status
-      res.status(200).json({
-        status: "ok",
-        message: "PolicyBot API Diagnostics",
-        timestamp: new Date().toISOString(),
-        environment: process.env.NODE_ENV || 'development',
-        database: {
-          status: dbStatus,
-          error: dbError,
-          type: process.env.DATABASE_URL ? "postgresql" : "in-memory",
-          policies: policiesCount
-        },
-        ai: {
-          huggingface: hfStatus,
-          details: hfDetails
-        },
-        extension: {
-          apis: {
-            health: "/api/extension/health",
-            search: "/api/extension/search",
-            login: "/api/extension/login",
-            testKey: "/api/noauth/test-key"
-          },
-          testKey: testApiKey
-        },
-        server: {
-          nodejs: process.version,
-          memory: process.memoryUsage().heapUsed / 1024 / 1024 + " MB",
-          uptime: Math.floor(process.uptime()) + " seconds"
-        },
-        deployment: {
-          nodeEnv: process.env.NODE_ENV || "development",
-          isReplit: !!process.env.REPL_SLUG,
-          replId: process.env.REPL_ID || null,
-          replSlug: process.env.REPL_SLUG || null
-        },
-        troubleshooting: {
-          checkConnection: "Make sure you can reach this endpoint from your extension",
-          commonIssues: [
-            "API URL must use HTTPS for Chrome extensions",
-            "CORS headers are required for cross-origin requests",
-            "API key must be included in headers as X-API-Key"
-          ]
-        }
-      });
-    } catch (error) {
-      console.error("Diagnostics endpoint error:", error);
-      res.status(500).json({
-        status: "error",
-        message: "Failed to generate diagnostic information",
-        error: error instanceof Error ? error.message : String(error),
-        timestamp: new Date().toISOString()
-      });
-    }
-  });
-  
-  // Add a public no-auth endpoint for pure server validation - critical for 502 debugging
-  app.get('/api/noauth/health', (req, res) => {
-    res.status(200).json({
-      status: 'ok',
-      message: 'Server is accessible without authentication',
-      timestamp: new Date().toISOString(),
-      request: {
-        method: req.method,
-        path: req.path,
-        headers: req.headers,
-        ip: req.ip,
-        protocol: req.protocol,
-        secure: req.secure
-      },
-      server: {
-        nodejs: process.version,
-        memory: Math.round(process.memoryUsage().heapUsed / 1024 / 1024 * 100) / 100 + " MB",
-        uptime: Math.floor(process.uptime()) + " seconds"
-      }
-    });
-  });
-
-  // Additional minimal test endpoint that ensures the basic functionality works
-  // Use this to verify that the server is running correctly in Replit deployment
-  app.get("/api/test", (req, res) => {
-    res.json({
-      status: "ok",
-      message: "API is working!",
-      timestamp: new Date().toISOString(),
-      deployment: {
-        environment: process.env.NODE_ENV || "development",
-        isReplit: !!process.env.REPL_SLUG
-      }
-    });
-  });
-
-
   
   // Test endpoint for answering policy questions with direct content (protected by API key)
   app.post("/api/extension/ask-policy", validateApiKey, async (req, res) => {
@@ -1037,10 +783,7 @@ export function registerRoutes(app: Express): void {
       // Ensure user is authenticated via API key validation
       if (!req.user) {
         console.log("No user found in request - API key validation failed");
-        return res.status(401).json({ 
-          success: false,
-          message: "Unauthorized or invalid API key"
-        });
+        return res.status(401).json({ message: "Unauthorized" });
       }
       
       console.log(`Processing search from user: ${req.user.id} (${req.user.username})`);
@@ -1049,37 +792,16 @@ export function registerRoutes(app: Express): void {
       console.log(`Search query: "${query}"`);
       
       if (!query || typeof query !== 'string' || query.trim() === '') {
-        return res.status(400).json({ 
-          success: false,
-          message: "Query is required",
-          error: "missing_query"
-        });
+        return res.status(400).json({ message: "Query is required" });
       }
       
       // Get all policies for searching
       const policies = await storage.getPolicies();
       console.log(`Found ${policies.length} policies to search through`);
       
-      // Check if we have any policies at all
-      if (!policies || policies.length === 0) {
-        console.log("No policies found in database");
-        return res.status(200).json({
-          success: true,
-          answer: "This question does not appear to be addressed in any of the provided policies.",
-          confidence: 1.0
-        });
-      }
-      
       // Perform AI search with Hugging Face only (as requested)
       console.log("Performing AI search...");
       console.log("Attempting search with Hugging Face models");
-      
-      // Check for Hugging Face API key
-      if (!process.env.HUGGINGFACE_API_KEY) {
-        console.error("CRITICAL ERROR: Missing HUGGINGFACE_API_KEY environment variable");
-        // Still continue with keyword search
-      }
-      
       const searchResult = await searchPoliciesWithAI(query, policies);
       console.log("AI search completed");
       
@@ -1553,5 +1275,6 @@ export function registerRoutes(app: Express): void {
     fs.mkdirSync(uploadsDir, { recursive: true });
   }
 
-  // Removed httpServer creation - this is now handled in index.ts
+  const httpServer = createServer(app);
+  return httpServer;
 }

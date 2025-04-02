@@ -3,68 +3,7 @@ import { Policy } from '@shared/schema';
 
 // Initialize the Hugging Face client with API key
 // Using API key allows access to more powerful models and higher rate limits
-let hf: HfInference | null = null;
-let hfInitialized = false;
-
-/**
- * Lazy-initializes the Hugging Face client when needed
- * This approach prevents initialization errors from blocking server startup
- * and allows for runtime recovery if the API key wasn't available at startup
- */
-export async function getHfClient(): Promise<HfInference> {
-  // Return the existing client if already initialized successfully
-  if (hf && hfInitialized) return hf;
-  
-  // Reset initialization status on retry
-  hfInitialized = false;
-  
-  try {
-    // Verify and clean API key (to fix issues with whitespace or other invalid characters)
-    let apiKey = process.env.HUGGINGFACE_API_KEY || '';
-    apiKey = apiKey.trim(); // Remove any whitespace
-    
-    if (!apiKey) {
-      console.warn("Warning: Missing HUGGINGFACE_API_KEY environment variable - using limited functionality");
-      hf = new HfInference(); // Initialize without API key
-    } else {
-      // Log partial API key for debugging (safely truncated)
-      const safeKeyPreview = apiKey.substring(0, 3) + '...' + apiKey.substring(apiKey.length - 3);
-      console.log(`Initializing HuggingFace client with API key: ${safeKeyPreview}`);
-      
-      // Initialize with the cleaned API key
-      hf = new HfInference(apiKey);
-      console.log("HuggingFace client initialized successfully with API key");
-    }
-    
-    // Mark as initialized
-    hfInitialized = true;
-    
-    // Perform a very basic test to verify the client works
-    try {
-      // Simple check to ensure the client is minimally functional
-      console.log("Testing HuggingFace client with basic operation...");
-      // No actual API call needed here, just checking the client object is valid
-    } catch (testError) {
-      console.warn("HuggingFace client test failed:", testError);
-      // Continue anyway - it's better to have a potentially working client than none
-    }
-    
-    return hf;
-  } catch (error) {
-    console.error("Error initializing HuggingFace client:", error);
-    // Create a fallback client that will at least allow the app to start
-    try {
-      hf = new HfInference();
-      console.log("Created fallback HuggingFace client without API key");
-      hfInitialized = true;
-      return hf;
-    } catch (fallbackError) {
-      console.error("Critical error creating fallback HuggingFace client:", fallbackError);
-      // Last resort: return a minimal mock object that won't crash the app
-      return new HfInference();
-    }
-  }
-}
+const hf = new HfInference(process.env.HUGGINGFACE_API_KEY);
 
 // Using the Mistral model as default - far more powerful than basic models
 // PRIMARY: Use Mistral model (instruction-tuned, powerful for complex reasoning)
@@ -92,21 +31,8 @@ export async function searchPoliciesWithAI(query: string, policies: Policy[]): P
   confidence: number;
   error?: string;
 }> {
-  // Log API key availability (without exposing the actual key)
-  console.log(`HuggingFace API Key configured: ${process.env.HUGGINGFACE_API_KEY ? 'YES' : 'NO'}`);
-  
   try {
-    if (!process.env.HUGGINGFACE_API_KEY) {
-      console.error("CRITICAL ERROR: Missing HUGGINGFACE_API_KEY environment variable");
-      return {
-        answer: "Unable to process request due to missing AI configuration. Please contact support.",
-        confidence: 1.0,
-        error: "missing_api_key"
-      };
-    }
-    
     if (!policies || policies.length === 0) {
-      console.log("No policies found in database for search");
       return {
         answer: "No policies found in the system. Please add some policies first.",
         confidence: 1.0
@@ -183,8 +109,7 @@ Do not include any other text, explanations, or commentary in your response - on
     let response: any = null;
     try {
       console.log(`Attempting to call Hugging Face model: ${DEFAULT_MODEL}`);
-      const client = await getHfClient();
-      response = await client.textGeneration({
+      response = await hf.textGeneration({
         model: DEFAULT_MODEL,
         inputs: prompt,
         parameters: {
@@ -207,8 +132,7 @@ Do not include any other text, explanations, or commentary in your response - on
         
         try {
           console.log(`Attempting fallback model: ${fallbackModel}`);
-          const client = await getHfClient();
-          response = await client.textGeneration({
+          response = await hf.textGeneration({
             model: fallbackModel,
             inputs: prompt,
             parameters: {
@@ -484,7 +408,7 @@ IMPORTANT: You must format your entire response as a valid JSON object. Do not i
     let response: any = null;
     try {
       console.log(`Calling Hugging Face model for document Q&A: ${DEFAULT_MODEL}`);
-      response = await (await getHfClient()).textGeneration({
+      response = await hf.textGeneration({
         model: DEFAULT_MODEL,
         inputs: prompt,
         parameters: {
@@ -505,7 +429,7 @@ IMPORTANT: You must format your entire response as a valid JSON object. Do not i
         
         try {
           console.log(`Attempting fallback model for document Q&A: ${fallbackModel}`);
-          response = await (await getHfClient()).textGeneration({
+          response = await hf.textGeneration({
             model: fallbackModel,
             inputs: prompt,
             parameters: {
@@ -631,7 +555,7 @@ IMPORTANT: You must format your entire response as a valid JSON object. Do not i
     let response: any = null;
     try {
       console.log(`Attempting to call Hugging Face model for analysis: ${DEFAULT_MODEL}`);
-      response = await (await getHfClient()).textGeneration({
+      response = await hf.textGeneration({
         model: DEFAULT_MODEL,
         inputs: prompt,
         parameters: {
@@ -652,7 +576,7 @@ IMPORTANT: You must format your entire response as a valid JSON object. Do not i
         
         try {
           console.log(`Attempting fallback model for analysis: ${fallbackModel}`);
-          response = await (await getHfClient()).textGeneration({
+          response = await hf.textGeneration({
             model: fallbackModel,
             inputs: prompt,
             parameters: {
